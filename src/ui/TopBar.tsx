@@ -1,4 +1,3 @@
-import BrightnessAutoOutlined from "@mui/icons-material/BrightnessAutoOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -14,17 +13,17 @@ import { useColorScheme } from "@mui/material/styles";
 import { useRef, useState } from "react";
 import iconUrl from "./icon.svg";
 
-type Mode = "system" | "light" | "dark";
+type Mode = "light" | "dark";
+// Until someone picks one, the app follows the system setting; MUI saves the pick in localStorage ("mui-mode").
 const MODES: { mode: Mode; label: string; icon: React.ReactNode }[] = [
-  { mode: "system", label: "System", icon: <BrightnessAutoOutlined fontSize="small" /> },
   { mode: "light", label: "Light", icon: <LightModeOutlined fontSize="small" /> },
   { mode: "dark", label: "Dark", icon: <DarkModeOutlined fontSize="small" /> },
 ];
 
 function ThemeMenu() {
-  const { mode, setMode } = useColorScheme();
+  const { colorScheme, setMode } = useColorScheme();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const current = MODES.find((m) => m.mode === (mode ?? "system")) ?? MODES[0]!;
+  const current = MODES.find((m) => m.mode === colorScheme) ?? MODES[0]!;
   return (
     <>
       <Tooltip title={`Theme: ${current.label}`}>
