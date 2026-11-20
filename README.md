@@ -52,6 +52,11 @@ Contributions are welcome. Open an issue to discuss larger changes first, keep `
 sure `bun test`, `bun run typecheck` and `bun run build` pass. By contributing you agree that your contribution is
 licensed under the Apache License 2.0, as stated in section 5 of the license.
 
+Pull requests are squash-merged, so the PR title becomes the commit on `main` and must follow
+[Conventional Commits](https://www.conventionalcommits.org/). Releases are automatic: a merge with a `feat:` or `fix:`
+title publishes the next beta (`v0.1.0-beta.N`) with desktop apps attached. Other types such as `docs:`, `ci:` or
+`chore:` release nothing. Never set the version in `package.json` by hand; it comes from the git tags.
+
 ## License
 
 Copyright 2026 Chetan Basuray. Licensed under the [Apache License 2.0](LICENSE). If you redistribute CytoPop or

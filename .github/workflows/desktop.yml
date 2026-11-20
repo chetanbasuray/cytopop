@@ -1,9 +1,15 @@
 name: Desktop apps
 
 # Builds desktop apps with Pake (Tauri) from the same web build and attaches them to the release.
+# The Release workflow calls this with the new tag; a release made by hand triggers it directly.
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -25,8 +31,12 @@ jobs:
             args: --targets deb
             icon: desktop/icons/icon.png
     runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ inputs.tag || (github.event_name == 'release' && github.ref_name) || '' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v7
         with:
@@ -49,7 +59,7 @@ jobs:
         run: |
           mkdir -p desktop/out
           VERSION=$(node -p "require('./package.json').version")
-          [[ "$GITHUB_REF_TYPE" == tag ]] && VERSION="${GITHUB_REF_NAME#v}"
+          [[ -n "$TAG" ]] && VERSION="${TAG#v}"
           # Windows installers only accept numeric x.y.z, so drop any "-beta.N" suffix.
           npx -y pake-cli@3.18.0 ./dist/index.html --use-local-file --name CytoPop \
             --identifier io.github.chetanbasuray.cytopop --width 1280 --height 860 \
@@ -61,8 +71,8 @@ jobs:
           name: cytopop-${{ runner.os }}
           path: desktop/out/*
       - name: Attach to release
-        if: github.event_name == 'release'
+        if: env.TAG != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" desktop/out/* --clobber
+        run: gh release upload "$TAG" desktop/out/* --clobber
