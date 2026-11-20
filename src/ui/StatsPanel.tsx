@@ -46,7 +46,7 @@ export function StatsPanel(props: {
       </Stack>
       {sample ? (
         <TableContainer>
-          <Table size="small" aria-label="Population statistics">
+          <Table size="small" aria-label="Population statistics" sx={{ "& th, & td": { px: 1 }, "& th:first-of-type, & td:first-of-type": { pl: 0 } }}>
             <TableHead>
               <TableRow>
                 <TableCell>Population</TableCell>
@@ -61,7 +61,7 @@ export function StatsPanel(props: {
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.key} hover>
-                  <TableCell sx={{ pl: 2 + r.depth * 2 }}>{r.name}</TableCell>
+                  <TableCell sx={{ "&&": { pl: r.depth * 2 } }}>{r.name}</TableCell>
                   <TableCell align="right" sx={num}>{r.count.toLocaleString()}</TableCell>
                   <TableCell align="right" sx={num}>{fmt(r.pp, 2)}</TableCell>
                   <TableCell align="right" sx={num}>{fmt(r.pt, 2)}</TableCell>

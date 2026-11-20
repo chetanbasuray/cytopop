@@ -119,8 +119,11 @@ export function PlotPanel(props: {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    // Also cap by viewport height so the whole plot fits on a landscape tablet without scrolling.
-    const fit = (w: number) => w > 0 && setSize(Math.max(320, Math.min(680, Math.floor(w), window.innerHeight - 260)));
+    // Also cap by the viewport height left below the plot's top (minus footer and padding), so it fits without scrolling.
+    const fit = (w: number) => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      if (w > 0) setSize(Math.max(320, Math.min(680, Math.floor(w), Math.floor(window.innerHeight - top - 72))));
+    };
     const refit = () => fit(el.clientWidth);
     refit(); // measure now; observer callbacks only arrive once the page renders a frame
     const ro = new ResizeObserver(([entry]) => fit(entry?.contentRect.width ?? 0));
@@ -256,11 +259,9 @@ export function PlotPanel(props: {
 
   const names = sample.names;
   const parentName = parent ? populations.find((p) => p.id === parent)?.name : "All events";
-  const mask = parent ? masks?.get(parent) : undefined;
-  const shown = mask ? mask.reduce((a, b) => a + b, 0) : sample.file.eventCount;
   const hint = TOOLS.find((t) => t.tool === tool)?.hint;
   const select = (label: string, value: string, onChange: (v: string) => void, options: [string, string][], disabled = false) => (
-    <TextField select size="small" label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} sx={{ minWidth: 132 }}>
+    <TextField select size="small" label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} sx={{ minWidth: 112 }}>
       {options.map(([v, t]) => <MenuItem key={v} value={v}>{t}</MenuItem>)}
     </TextField>
   );
@@ -316,10 +317,6 @@ export function PlotPanel(props: {
         style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: tool === "none" ? "pan-x pan-y pinch-zoom" : "none", cursor: tool === "none" ? "default" : "crosshair" }}
       />
       </Box>
-      <Typography variant="body2" sx={{ color: "text.secondary", mt: 1 }}>
-        {sample.name} · {parentName} ·{" "}
-        <Box component="span" sx={{ fontVariantNumeric: "tabular-nums" }}>{shown.toLocaleString()}</Box> events
-      </Typography>
     </Paper>
   );
 }

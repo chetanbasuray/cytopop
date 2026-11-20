@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot ./index.html",
-    "build": "bun build ./index.html --outdir dist --production",
+    "build": "bun build ./index.html --outdir dist --production --define __VERSION__=\"\\\"$(git describe --tags --always 2>/dev/null || echo dev)\\\"\"",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "icons": "bun scripts/make-icons.ts"

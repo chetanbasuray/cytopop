@@ -1,18 +1,12 @@
 import DeleteOutline from "@mui/icons-material/DeleteOutlineOutlined";
-import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
-import { Box, Button, IconButton, List, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
 import type { Population, PopulationStats } from "../core/populations";
-import type { Sample } from "./model";
 import { MONO } from "./theme";
 
 const rowSx = { borderRadius: 2, minHeight: 36, py: 0.5, px: 1.5 } as const;
 const countSx = { fontFamily: MONO, fontSize: 12, color: "text.secondary", fontVariantNumeric: "tabular-nums" } as const;
 
-export function Sidebar(props: {
-  samples: Sample[];
-  active: string | null;
-  onSelectSample: (id: string) => void;
-  onLoadDemo: () => void;
+export function Populations(props: {
   populations: Population[];
   stats: PopulationStats[];
   totalEvents: number | undefined;
@@ -64,27 +58,7 @@ export function Sidebar(props: {
   };
 
   return (
-    <Paper component="aside" sx={{ p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
-      <section>
-        <Typography variant="h2" sx={{ color: "text.secondary", mb: 1, px: 1.5 }}>Samples</Typography>
-        {props.samples.length > 0 ? (
-          <List dense disablePadding sx={{ display: "grid", gap: 0.5 }}>
-            {props.samples.map((s) => (
-              <ListItemButton key={s.id} selected={s.id === props.active} onClick={() => props.onSelectSample(s.id)} sx={{ ...rowSx, gap: 1, minWidth: 0 }} title={s.name}>
-                <ListItemText primary={s.name} slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } } }} sx={{ my: 0, minWidth: 0 }} />
-                <Typography component="span" sx={countSx}>{s.file.eventCount.toLocaleString()}</Typography>
-              </ListItemButton>
-            ))}
-          </List>
-        ) : (
-          <Typography variant="body2" sx={{ color: "text.secondary", px: 1.5 }}>
-            Open or drop .fcs files. They stay on this computer
-          </Typography>
-        )}
-        <Button size="small" startIcon={<ScienceOutlined />} onClick={props.onLoadDemo} sx={{ mt: 1, ml: 0.5 }}>
-          Load demo sample
-        </Button>
-      </section>
+    <Paper component="aside" sx={{ p: 2 }}>
       <section>
         <Typography variant="h2" sx={{ color: "text.secondary", mb: 1, px: 1.5 }}>Populations</Typography>
         <Box component="ul" aria-label="Population tree" sx={{ m: 0, p: 0, display: "grid", gap: 0.5 }}>
