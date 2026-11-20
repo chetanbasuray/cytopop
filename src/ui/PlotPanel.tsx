@@ -302,13 +302,13 @@ export function PlotPanel(props: {
             label="Compensate"
           />
         </Tooltip>
-        <Tooltip title="Edit the compensation matrix">
-          <span>
-            <IconButton aria-label="Edit the compensation matrix" disabled={!props.spill} onClick={props.onEditMatrix}>
+        {props.useComp && props.spill && (
+          <Tooltip title="Edit the compensation matrix">
+            <IconButton aria-label="Edit the compensation matrix" onClick={props.onEditMatrix}>
               <GridOnOutlined />
             </IconButton>
-          </span>
-        </Tooltip>
+          </Tooltip>
+        )}
       </Stack>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 1.5, flexWrap: "wrap" }} useFlexGap>
         <ToggleButtonGroup size="small" exclusive value={tool} onChange={(_, v: Tool | null) => v && props.onTool(v)} aria-label="Gate tools">
