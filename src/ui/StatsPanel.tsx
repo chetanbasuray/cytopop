@@ -1,6 +1,6 @@
 import { MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import { useMemo } from "react";
-import { channelStats, type PopulationStats } from "../core/populations";
+import { STATS, channelStats, type ChannelStats, type PopulationStats, type StatKey } from "../core/populations";
 import { paramLabel, type Sample } from "./model";
 import { MONO } from "./theme";
 
@@ -12,16 +12,28 @@ export function StatsPanel(props: {
   cols: Float32Array[] | undefined;
   masks: Map<string, Uint8Array> | undefined;
   stats: PopulationStats[];
-  channel: string;
-  onChannel: (c: string) => void;
+  channels: string[];
+  onChannels: (c: string[]) => void;
+  statKeys: StatKey[];
+  onStatKeys: (k: StatKey[]) => void;
 }) {
-  const { sample, cols, masks, stats, channel } = props;
+  const { sample, cols, masks, stats, channels, statKeys } = props;
+
   const rows = useMemo(() => {
     if (!sample || !cols) return [];
-    const col = cols[sample.names.indexOf(channel)];
-    const none = { mean: NaN, median: NaN, cv: NaN };
+    const channelCols = channels.map((ch) => cols[sample.names.indexOf(ch)]);
+    const none: ChannelStats = { median: NaN, mean: NaN, geoMean: NaN, sd: NaN, cv: NaN, rsd: NaN, rcv: NaN, p5: NaN, p25: NaN, p75: NaN, p95: NaN };
+
     return [
-      { key: "all", name: "All events", depth: 0, count: sample.file.eventCount, pp: 100, pt: 100, c: col ? channelStats(col) : none },
+      {
+        key: "all",
+        name: "All events",
+        depth: 0,
+        count: sample.file.eventCount,
+        pp: 100,
+        pt: 100,
+        c: channelCols.map((col) => (col ? channelStats(col) : none)),
+      },
       ...stats.map((p) => ({
         key: p.id,
         name: p.name,
@@ -29,45 +41,133 @@ export function StatsPanel(props: {
         count: p.count,
         pp: p.percentParent,
         pt: p.percentTotal,
-        c: col && masks ? channelStats(col, masks.get(p.id)) : none,
+        c: channelCols.map((col) => (col && masks ? channelStats(col, masks.get(p.id)) : none)),
       })),
     ];
-  }, [sample, cols, masks, stats, channel]);
+  }, [sample, cols, masks, stats, channels]);
+
+  const handleChannelsChange = (newChannels: string[]) => {
+    if (newChannels.length === 0) return;
+    props.onChannels(newChannels);
+  };
+
+  const handleStatKeysChange = (newKeys: StatKey[]) => {
+    if (newKeys.length === 0) return;
+    const orderedKeys = newKeys.filter((k) => STATS.some((s) => s.key === k)).sort((a, b) => STATS.findIndex((s) => s.key === a) - STATS.findIndex((s) => s.key === b));
+    props.onStatKeys(orderedKeys);
+  };
 
   return (
     <Paper sx={{ p: 2, minWidth: 0 }}>
       <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", gap: 2, flexWrap: "wrap", mb: 1 }}>
         <Typography variant="h2" sx={{ color: "text.secondary" }}>Statistics</Typography>
         {sample && (
-          <TextField select size="small" label="Channel" value={channel} onChange={(e) => props.onChannel(e.target.value)} sx={{ minWidth: 160 }}>
-            {sample.names.map((n) => <MenuItem key={n} value={n}>{paramLabel(sample, n)}</MenuItem>)}
-          </TextField>
+          <>
+            <TextField
+              select
+              size="small"
+              label="Channels"
+              value={channels}
+              onChange={(e) => handleChannelsChange(e.target.value as unknown as string[])}
+              slotProps={{
+                select: {
+                  multiple: true,
+                  renderValue: (selected) => (selected as string[]).map((n) => paramLabel(sample, n)).join(", "),
+                },
+              }}
+              sx={{ minWidth: 160, maxWidth: 240 }}
+            >
+              {sample.names.map((n) => (
+                <MenuItem key={n} value={n}>
+                  {paramLabel(sample, n)}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Statistics"
+              value={statKeys}
+              onChange={(e) => handleStatKeysChange(e.target.value as unknown as StatKey[])}
+              slotProps={{
+                select: {
+                  multiple: true,
+                  renderValue: (selected) => STATS.filter((s) => (selected as StatKey[]).includes(s.key)).map((s) => s.label).join(", "),
+                },
+              }}
+              sx={{ minWidth: 160, maxWidth: 240 }}
+            >
+              {STATS.map((s) => (
+                <MenuItem key={s.key} value={s.key}>
+                  {s.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </>
         )}
       </Stack>
       {sample ? (
         <TableContainer>
           <Table size="small" aria-label="Population statistics" sx={{ "& th, & td": { px: 1 }, "& th:first-of-type, & td:first-of-type": { pl: 0 } }}>
             <TableHead>
-              <TableRow>
-                <TableCell>Population</TableCell>
-                <TableCell align="right">Count</TableCell>
-                <TableCell align="right">% parent</TableCell>
-                <TableCell align="right">% total</TableCell>
-                <TableCell align="right">Median</TableCell>
-                <TableCell align="right">Mean</TableCell>
-                <TableCell align="right">CV %</TableCell>
-              </TableRow>
+              {channels.length > 1 ? (
+                <>
+                  <TableRow>
+                    <TableCell colSpan={4} />
+                    {channels.map((ch) => (
+                      <TableCell key={ch} align="center" colSpan={statKeys.length}>
+                        {paramLabel(sample, ch)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Population</TableCell>
+                    <TableCell align="right">Count</TableCell>
+                    <TableCell align="right">% parent</TableCell>
+                    <TableCell align="right">% total</TableCell>
+                    {channels.map((ch) =>
+                      statKeys.map((k) => (
+                        <TableCell key={`${ch}-${k}`} align="right">
+                          {STATS.find((s) => s.key === k)?.label}
+                        </TableCell>
+                      ))
+                    )}
+                  </TableRow>
+                </>
+              ) : (
+                <TableRow>
+                  <TableCell>Population</TableCell>
+                  <TableCell align="right">Count</TableCell>
+                  <TableCell align="right">% parent</TableCell>
+                  <TableCell align="right">% total</TableCell>
+                  {statKeys.map((k) => (
+                    <TableCell key={k} align="right">
+                      {STATS.find((s) => s.key === k)?.label}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
             </TableHead>
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.key} hover>
                   <TableCell sx={{ "&&": { pl: r.depth * 2 } }}>{r.name}</TableCell>
-                  <TableCell align="right" sx={num}>{r.count.toLocaleString()}</TableCell>
-                  <TableCell align="right" sx={num}>{fmt(r.pp, 2)}</TableCell>
-                  <TableCell align="right" sx={num}>{fmt(r.pt, 2)}</TableCell>
-                  <TableCell align="right" sx={num}>{fmt(r.c.median)}</TableCell>
-                  <TableCell align="right" sx={num}>{fmt(r.c.mean)}</TableCell>
-                  <TableCell align="right" sx={num}>{fmt(r.c.cv)}</TableCell>
+                  <TableCell align="right" sx={num}>
+                    {r.count.toLocaleString()}
+                  </TableCell>
+                  <TableCell align="right" sx={num}>
+                    {fmt(r.pp, 2)}
+                  </TableCell>
+                  <TableCell align="right" sx={num}>
+                    {fmt(r.pt, 2)}
+                  </TableCell>
+                  {channels.map((ch, chIdx) =>
+                    statKeys.map((k) => (
+                      <TableCell key={`${r.key}-${ch}-${k}`} align="right" sx={num}>
+                        {fmt(r.c[chIdx]![k])}
+                      </TableCell>
+                    ))
+                  )}
                 </TableRow>
               ))}
             </TableBody>

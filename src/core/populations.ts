@@ -16,10 +16,92 @@ export interface PopulationStats {
   percentTotal: number;
 }
 
-export interface ChannelStats {
-  mean: number;
-  median: number;
-  cv: number; // percent
+export type StatKey = "median" | "mean" | "geoMean" | "sd" | "cv" | "rsd" | "rcv" | "p5" | "p25" | "p75" | "p95";
+export const STATS: { key: StatKey; label: string }[] = [
+  { key: "median", label: "Median" },
+  { key: "mean", label: "Mean" },
+  { key: "geoMean", label: "Geo. mean" },
+  { key: "sd", label: "SD" },
+  { key: "cv", label: "CV %" },
+  { key: "rsd", label: "Robust SD" },
+  { key: "rcv", label: "Robust CV %" },
+  { key: "p5", label: "5th pct" },
+  { key: "p25", label: "25th pct" },
+  { key: "p75", label: "75th pct" },
+  { key: "p95", label: "95th pct" },
+];
+export type ChannelStats = Record<StatKey, number>;
+
+function percentile(sorted: Float64Array, p: number): number {
+  const n = sorted.length;
+  if (n === 0) return NaN;
+  const pos = (n - 1) * (p / 100);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo]!;
+  const frac = pos - lo;
+  return sorted[lo]! * (1 - frac) + sorted[hi]! * frac;
+}
+
+export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelStats {
+  const nTotal = values.length;
+  const picked = new Float64Array(nTotal);
+  let n = 0;
+  for (let i = 0; i < nTotal; i++) {
+    if (!mask || mask[i]!) {
+      picked[n++] = values[i]!;
+    }
+  }
+  if (n === 0) {
+    return {
+      median: NaN, mean: NaN, geoMean: NaN, sd: NaN, cv: NaN, rsd: NaN, rcv: NaN, p5: NaN, p25: NaN, p75: NaN, p95: NaN,
+    };
+  }
+  const sorted = picked.slice(0, n);
+  sorted.sort((a, b) => a - b);
+
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const mid = n >> 1;
+  const median = n % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+
+  let variance = 0;
+  if (n > 1) {
+    for (let i = 0; i < n; i++) {
+      const d = sorted[i]! - mean;
+      variance += d * d;
+    }
+    variance /= n - 1;
+  }
+  const sd = Math.sqrt(variance);
+
+  const cv = mean === 0 ? NaN : (100 * sd) / Math.abs(mean);
+
+  let geoMean = NaN;
+  let sumLn = 0;
+  let posCount = 0;
+  for (let i = 0; i < n; i++) {
+    const v = sorted[i]!;
+    if (v > 0) {
+      sumLn += Math.log(v);
+      posCount++;
+    }
+  }
+  if (posCount > 0) {
+    geoMean = Math.exp(sumLn / posCount);
+  }
+
+  const p5 = percentile(sorted, 5);
+  const p25 = percentile(sorted, 25);
+  const p75 = percentile(sorted, 75);
+  const p95 = percentile(sorted, 95);
+
+  const p84_13 = percentile(sorted, 84.13);
+  const p15_87 = percentile(sorted, 15.87);
+  const rsd = (p84_13 - p15_87) / 2;
+
+  const rcv = median === 0 ? NaN : (100 * rsd) / Math.abs(median);
+
+  return { median, mean, geoMean, sd, cv, rsd, rcv, p5, p25, p75, p95 };
 }
 
 /** Evaluates every population against a sample. Parents are evaluated before children. */
@@ -68,19 +150,6 @@ export function populationStats(populations: Population[], masks: Map<string, Ui
       percentTotal: total ? (100 * c) / total : 0,
     };
   });
-}
-
-export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelStats {
-  const picked: number[] = [];
-  for (let i = 0; i < values.length; i++) if (!mask || mask[i]) picked.push(values[i]!);
-  if (picked.length === 0) return { mean: NaN, median: NaN, cv: NaN };
-  const mean = picked.reduce((a, b) => a + b, 0) / picked.length;
-  picked.sort((a, b) => a - b);
-  const mid = picked.length >> 1;
-  const median = picked.length % 2 ? picked[mid]! : (picked[mid - 1]! + picked[mid]!) / 2;
-  const variance = picked.length > 1 ? picked.reduce((a, b) => a + (b - mean) ** 2, 0) / (picked.length - 1) : 0;
-  const cv = mean === 0 ? NaN : (100 * Math.sqrt(variance)) / Math.abs(mean);
-  return { mean, median, cv };
 }
 
 function csvCell(v: string | number): string {
