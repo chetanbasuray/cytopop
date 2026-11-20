@@ -9,8 +9,8 @@ export interface Frame {
   h: number;
 }
 
-export function frame(canvas: HTMLCanvasElement): Frame {
-  const css = 520;
+export function frame(canvas: HTMLCanvasElement, size: number): Frame {
+  const css = size;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = css * dpr;
   canvas.height = css * dpr;
@@ -78,9 +78,12 @@ export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: 
   bins.forEach((c, i) => ctx.lineTo(M.left + (i / B) * f.w, M.top + f.h - (c / max) * f.h * 0.95));
   ctx.lineTo(M.left + f.w, M.top + f.h);
   ctx.closePath();
-  ctx.fillStyle = css("--accent") + "55";
-  ctx.strokeStyle = css("--accent");
+  const accent = css("--mui-palette-primary-main");
+  ctx.fillStyle = accent;
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.3;
   ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.stroke();
 }
 
@@ -107,11 +110,11 @@ function ticks(t: Transform): { v: number; label: string }[] {
 
 export function drawAxes(f: Frame, xt: Transform, yt: Transform | null, xLabel: string, yLabel: string): void {
   const { ctx, w, h } = f;
-  ctx.strokeStyle = css("--line");
-  ctx.fillStyle = css("--muted");
+  ctx.strokeStyle = css("--mui-palette-divider");
+  ctx.fillStyle = css("--mui-palette-text-secondary");
   ctx.lineWidth = 1;
   ctx.strokeRect(M.left + 0.5, M.top + 0.5, w, h);
-  ctx.font = "11px system-ui, sans-serif";
+  ctx.font = "11px Roboto, system-ui, sans-serif";
   const place = (t: Transform, horizontal: boolean) => {
     let last = -Infinity;
     for (const { v, label } of ticks(t).sort((a, b) => t.forward(a.v) - t.forward(b.v))) {
@@ -137,9 +140,9 @@ export function drawAxes(f: Frame, xt: Transform, yt: Transform | null, xLabel: 
   };
   place(xt, true);
   if (yt) place(yt, false);
-  ctx.fillStyle = css("--text");
+  ctx.fillStyle = css("--mui-palette-text-primary");
   ctx.textAlign = "center";
-  ctx.font = "12px system-ui, sans-serif";
+  ctx.font = "12px Roboto, system-ui, sans-serif";
   ctx.fillText(xLabel, M.left + w / 2, M.top + h + 38);
   ctx.save();
   ctx.translate(14, M.top + h / 2);
@@ -157,7 +160,7 @@ export function drawGate(f: Frame, gate: Gate, label: string, preview = false): 
   ctx.beginPath();
   ctx.rect(M.left, M.top, f.w, f.h);
   ctx.clip();
-  ctx.strokeStyle = css("--gate");
+  ctx.strokeStyle = css("--mui-palette-gate-main");
   ctx.lineWidth = 1.5;
   if (preview) ctx.setLineDash([4, 3]);
   ctx.beginPath();
@@ -203,12 +206,18 @@ export function drawGate(f: Frame, gate: Gate, label: string, preview = false): 
   }
   ctx.stroke();
   if (label) {
-    ctx.fillStyle = css("--gate");
-    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.font = "500 12px Roboto, system-ui, sans-serif";
     ctx.textAlign = "center";
     const half = ctx.measureText(label).width / 2 + 4;
     const ax = Math.min(Math.max(anchor[0], M.left + half), M.left + f.w - half);
     const ay = Math.min(Math.max(anchor[1], M.top + 14), M.top + f.h - 6);
+    // Halo in the panel colour keeps the label readable over dense events.
+    ctx.setLineDash([]);
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = css("--mui-palette-background-paper");
+    ctx.strokeText(label, ax, ay);
+    ctx.fillStyle = css("--mui-palette-gate-main");
     ctx.fillText(label, ax, ay);
   }
   ctx.restore();

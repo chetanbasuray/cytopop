@@ -32,6 +32,14 @@ test("quadrants partition every event exactly once", () => {
   expect(Array.from(applyGate(q["+-"], names, data))).toEqual([0, 0, 1, 0, 0]);
 });
 
+test("quadrants survive a JSON round trip, including templates with null edges", () => {
+  const q = quadrants(X, Y, 0.5, 0.5);
+  const restored = JSON.parse(JSON.stringify(q)) as typeof q;
+  expect(Array.from(applyGate(restored["++"], names, data))).toEqual([0, 1, 0, 1, 1]);
+  const legacy = JSON.parse('{"kind":"rectangle","x":' + JSON.stringify(X) + ',"y":' + JSON.stringify(Y) + ',"xMin":0.5,"xMax":null,"yMin":0.5,"yMax":null}');
+  expect(Array.from(applyGate(legacy, names, data))).toEqual([0, 1, 0, 1, 1]);
+});
+
 test("population tree, stats and CSV", () => {
   const pops: Population[] = [
     { id: "hi", name: "High X", parentId: null, gate: { kind: "range", x: X, min: 0.5, max: 2 } },

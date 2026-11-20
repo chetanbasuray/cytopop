@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="CytoPop">
+  <!-- A gate drawn around a cell population, with one event left outside it. -->
+  <rect width="32" height="32" rx="7" fill="#00696d"/>
+  <g fill="#ffffff">
+    <circle cx="8.5" cy="24" r="2"/>
+    <circle cx="17.5" cy="13.5" r="2.25"/>
+    <circle cx="21.5" cy="17.5" r="2.25"/>
+    <circle cx="16.5" cy="19" r="2.25"/>
+  </g>
+  <path d="M12.5 11 L20.5 7.5 L27 14.5 L23 23.5 L13 22.5 Z" fill="none" stroke="#ff9cc0" stroke-width="2" stroke-linejoin="round"/>
+</svg>

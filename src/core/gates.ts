@@ -16,8 +16,9 @@ export type Quadrant = "++" | "-+" | "--" | "+-";
 
 /** Four rectangle gates meeting at (cx, cy), in display units. Names follow x-sign then y-sign. */
 export function quadrants(x: Dimension, y: Dimension, cx: number, cy: number): Record<Quadrant, Gate> {
-  const lo = -Infinity;
-  const hi = Infinity;
+  // Finite stand-ins for "unbounded": JSON turns Infinity into null, which would break saved templates.
+  const lo = -1e9;
+  const hi = 1e9;
   const rect = (xMin: number, xMax: number, yMin: number, yMax: number): Gate => ({ kind: "rectangle", x, y, xMin, xMax, yMin, yMax });
   return {
     "++": rect(cx, hi, cy, hi),
@@ -66,7 +67,8 @@ export function applyGate(gate: Gate, names: string[], data: Float32Array[], wit
         break;
       case "rectangle": {
         const y = yc!.t.forward(yc!.values[e]!);
-        hit = x >= gate.xMin && x < gate.xMax && y >= gate.yMin && y < gate.yMax;
+        // Templates saved by 0.1.0-beta.1 stored open quadrant edges as null; read null as unbounded.
+        hit = x >= (gate.xMin ?? -Infinity) && x < (gate.xMax ?? Infinity) && y >= (gate.yMin ?? -Infinity) && y < (gate.yMax ?? Infinity);
         break;
       }
       case "polygon":
