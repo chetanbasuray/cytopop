@@ -1,0 +1,215 @@
+import type { Gate } from "../core/gates";
+import type { Transform } from "../core/transforms";
+
+export const M = { left: 60, right: 14, top: 14, bottom: 46 };
+
+export interface Frame {
+  ctx: CanvasRenderingContext2D;
+  w: number; // plot area in CSS px
+  h: number;
+}
+
+export function frame(canvas: HTMLCanvasElement): Frame {
+  const css = 520;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = css * dpr;
+  canvas.height = css * dpr;
+  canvas.style.width = `${css}px`;
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, css, css);
+  return { ctx, w: css - M.left - M.right, h: css - M.top - M.bottom };
+}
+
+const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// Perceptually ordered ramp (dark blue to yellow), interpolated.
+const RAMP = [
+  [48, 18, 59], [50, 101, 234], [27, 207, 212], [97, 252, 108], [210, 233, 53], [254, 155, 45], [217, 56, 6],
+];
+function ramp(t: number): [number, number, number] {
+  const x = Math.min(Math.max(t, 0), 1) * (RAMP.length - 1);
+  const i = Math.min(Math.floor(x), RAMP.length - 2);
+  const f = x - i;
+  const a = RAMP[i]!;
+  const b = RAMP[i + 1]!;
+  return [a[0]! + (b[0]! - a[0]!) * f, a[1]! + (b[1]! - a[1]!) * f, a[2]! + (b[2]! - a[2]!) * f];
+}
+
+export function drawDensity(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask?: Uint8Array): void {
+  const G = 220;
+  const bins = new Uint32Array(G * G);
+  let max = 0;
+  for (let e = 0; e < xs.length; e++) {
+    if (mask && !mask[e]) continue;
+    const u = xt.forward(xs[e]!);
+    const v = yt.forward(ys[e]!);
+    if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) continue;
+    const k = Math.floor((1 - v) * G) * G + Math.floor(u * G);
+    const c = ++bins[k]!;
+    if (c > max) max = c;
+  }
+  const img = new ImageData(G, G);
+  const logMax = Math.log1p(max);
+  for (let k = 0; k < bins.length; k++) {
+    const c = bins[k]!;
+    if (!c) continue;
+    const [r, g, b] = ramp(Math.log1p(c) / logMax);
+    img.data.set([r, g, b, 255], k * 4);
+  }
+  const off = new OffscreenCanvas(G, G);
+  off.getContext("2d")!.putImageData(img, 0, 0);
+  f.ctx.imageSmoothingEnabled = false;
+  f.ctx.drawImage(off, M.left, M.top, f.w, f.h);
+}
+
+export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: Uint8Array): void {
+  const B = 256;
+  const bins = new Uint32Array(B);
+  for (let e = 0; e < xs.length; e++) {
+    if (mask && !mask[e]) continue;
+    const u = xt.forward(xs[e]!);
+    if (u >= 0 && u < 1) bins[Math.floor(u * B)]!++;
+  }
+  const max = Math.max(1, ...bins);
+  const { ctx } = f;
+  ctx.beginPath();
+  ctx.moveTo(M.left, M.top + f.h);
+  bins.forEach((c, i) => ctx.lineTo(M.left + (i / B) * f.w, M.top + f.h - (c / max) * f.h * 0.95));
+  ctx.lineTo(M.left + f.w, M.top + f.h);
+  ctx.closePath();
+  ctx.fillStyle = css("--accent") + "55";
+  ctx.strokeStyle = css("--accent");
+  ctx.fill();
+  ctx.stroke();
+}
+
+const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+const sup = (n: number) => String(n).split("").map((d) => SUP[Number(d)]).join("");
+
+function ticks(t: Transform): { v: number; label: string }[] {
+  if (t.spec.kind === "linear") {
+    const { min, max } = t.spec;
+    const step = Math.pow(10, Math.floor(Math.log10((max - min) / 4)));
+    const nice = [1, 2, 5, 10].map((m) => m * step).find((s) => (max - min) / s <= 6) ?? step * 10;
+    const out = [];
+    for (let v = Math.ceil(min / nice) * nice; v <= max; v += nice) {
+      out.push({ v, label: Math.abs(v) >= 1000 ? `${+(v / 1000).toFixed(1)}k` : String(+v.toFixed(2)) });
+    }
+    return out;
+  }
+  const out = [{ v: 0, label: "0" }];
+  for (let k = 1; k <= 7; k++) {
+    out.push({ v: Math.pow(10, k), label: `10${sup(k)}` }, { v: -Math.pow(10, k), label: `-10${sup(k)}` });
+  }
+  return out;
+}
+
+export function drawAxes(f: Frame, xt: Transform, yt: Transform | null, xLabel: string, yLabel: string): void {
+  const { ctx, w, h } = f;
+  ctx.strokeStyle = css("--line");
+  ctx.fillStyle = css("--muted");
+  ctx.lineWidth = 1;
+  ctx.strokeRect(M.left + 0.5, M.top + 0.5, w, h);
+  ctx.font = "11px system-ui, sans-serif";
+  const place = (t: Transform, horizontal: boolean) => {
+    let last = -Infinity;
+    for (const { v, label } of ticks(t).sort((a, b) => t.forward(a.v) - t.forward(b.v))) {
+      const u = t.forward(v);
+      if (!(u >= 0 && u <= 1)) continue;
+      const px = horizontal ? M.left + u * w : M.top + (1 - u) * h;
+      if (Math.abs(px - last) < 22) continue;
+      last = px;
+      ctx.beginPath();
+      if (horizontal) {
+        ctx.moveTo(px, M.top + h);
+        ctx.lineTo(px, M.top + h + 4);
+        ctx.textAlign = "center";
+        ctx.fillText(label, px, M.top + h + 16);
+      } else {
+        ctx.moveTo(M.left - 4, px);
+        ctx.lineTo(M.left, px);
+        ctx.textAlign = "right";
+        ctx.fillText(label, M.left - 6, px + 4);
+      }
+      ctx.stroke();
+    }
+  };
+  place(xt, true);
+  if (yt) place(yt, false);
+  ctx.fillStyle = css("--text");
+  ctx.textAlign = "center";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText(xLabel, M.left + w / 2, M.top + h + 38);
+  ctx.save();
+  ctx.translate(14, M.top + h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+}
+
+export const toPx = (f: Frame, u: number, v: number): [number, number] => [M.left + u * f.w, M.top + (1 - v) * f.h];
+const clamp = (u: number) => Math.min(Math.max(u, 0), 1);
+
+export function drawGate(f: Frame, gate: Gate, label: string, preview = false): void {
+  const { ctx } = f;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(M.left, M.top, f.w, f.h);
+  ctx.clip();
+  ctx.strokeStyle = css("--gate");
+  ctx.lineWidth = 1.5;
+  if (preview) ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  let anchor: [number, number];
+  switch (gate.kind) {
+    case "range": {
+      const [x0] = toPx(f, clamp(gate.min), 0);
+      const [x1] = toPx(f, clamp(gate.max), 0);
+      const y = M.top + f.h * 0.12;
+      ctx.moveTo(x0, M.top);
+      ctx.lineTo(x0, M.top + f.h);
+      ctx.moveTo(x1, M.top);
+      ctx.lineTo(x1, M.top + f.h);
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      anchor = [(x0 + x1) / 2, y - 6];
+      break;
+    }
+    case "rectangle": {
+      const [x0, y0] = toPx(f, clamp(gate.xMin), clamp(gate.yMax));
+      const [x1, y1] = toPx(f, clamp(gate.xMax), clamp(gate.yMin));
+      ctx.rect(x0, y0, x1 - x0, y1 - y0);
+      anchor = [(x0 + x1) / 2, y0 + 14];
+      break;
+    }
+    case "polygon": {
+      gate.points.forEach(([u, v], i) => {
+        const [x, y] = toPx(f, u, v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      if (!preview) ctx.closePath();
+      const [u0, v0] = gate.points[0] ?? [0, 0];
+      anchor = toPx(f, u0, v0);
+      break;
+    }
+    case "ellipse": {
+      const [cx, cy] = toPx(f, gate.cx, gate.cy);
+      ctx.ellipse(cx, cy, gate.rx * f.w, gate.ry * f.h, -gate.angle, 0, Math.PI * 2);
+      anchor = [cx, cy];
+      break;
+    }
+  }
+  ctx.stroke();
+  if (label) {
+    ctx.fillStyle = css("--gate");
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    const half = ctx.measureText(label).width / 2 + 4;
+    const ax = Math.min(Math.max(anchor[0], M.left + half), M.left + f.w - half);
+    const ay = Math.min(Math.max(anchor[1], M.top + 14), M.top + f.h - 6);
+    ctx.fillText(label, ax, ay);
+  }
+  ctx.restore();
+}

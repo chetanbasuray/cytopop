@@ -1,0 +1,19 @@
+{
+  "name": "cytopop",
+  "version": "0.1.0-beta.1",
+  "description": "Flow cytometry analysis in the browser: open FCS files, compensate, gate populations and export statistics.",
+  "license": "Apache-2.0",
+  "author": "Chetan Basuray",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot ./index.html",
+    "build": "bun build ./index.html --outdir dist --minify",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

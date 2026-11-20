@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CytoPop</title>
+    <link rel="stylesheet" href="./src/ui/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>CytoPop <span class="badge" title="Beta: expect rough edges and breaking changes">beta</span></h1>
+      <div class="actions">
+        <label class="button primary">Open FCS files<input id="file-input" type="file" accept=".fcs,.FCS,.lmd" multiple hidden /></label>
+        <button id="save-template" type="button">Save gating template</button>
+        <label class="button">Load template<input id="load-template" type="file" accept=".json" hidden /></label>
+        <button id="export-csv" type="button">Export statistics (CSV)</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section>
+          <h2>Samples</h2>
+          <ul id="samples" class="list" aria-label="Samples"></ul>
+          <p id="samples-empty" class="hint">Open or drop .fcs files. Files stay on this computer.</p>
+          <button id="load-demo" type="button">Load demo sample</button>
+        </section>
+        <section>
+          <h2>Populations</h2>
+          <ul id="populations" class="tree" aria-label="Population tree"></ul>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <div class="controls">
+          <label>X <select id="x-param"></select></label>
+          <select id="x-scale" aria-label="X axis scale"></select>
+          <label>Y <select id="y-param"></select></label>
+          <select id="y-scale" aria-label="Y axis scale"></select>
+          <label class="check"><input id="compensate" type="checkbox" checked /> Compensate</label>
+        </div>
+        <div class="tools" role="toolbar" aria-label="Gate tools">
+          <button type="button" data-tool="none" aria-pressed="true">Pointer</button>
+          <button type="button" data-tool="rect" aria-pressed="false">Rectangle</button>
+          <button type="button" data-tool="polygon" aria-pressed="false">Polygon</button>
+          <button type="button" data-tool="ellipse" aria-pressed="false">Ellipse</button>
+          <button type="button" data-tool="quad" aria-pressed="false">Quadrants</button>
+          <button type="button" data-tool="range" aria-pressed="false">Range</button>
+          <span id="tool-hint" class="hint"></span>
+        </div>
+        <div class="plot-wrap">
+          <canvas id="plot" width="520" height="520" aria-label="Population plot"></canvas>
+          <p id="plot-title" class="plot-title"></p>
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stats-head">
+          <h2>Statistics</h2>
+          <label>Channel <select id="stat-channel"></select></label>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Population</th><th>Count</th><th>% parent</th><th>% total</th><th>Median</th><th>Mean</th><th>CV %</th></tr>
+          </thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+      </section>
+    </main>
+    <script type="module" src="./src/ui/app.ts"></script>
+  </body>
+</html>

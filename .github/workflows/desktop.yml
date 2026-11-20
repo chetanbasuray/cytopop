@@ -1,0 +1,63 @@
+name: Desktop apps
+
+# Builds desktop apps with Pake (Tauri) from the same web build and attaches them to the release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --multi-arch
+          - os: windows-latest
+            args: ""
+          - os: ubuntu-24.04
+            args: --targets deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev build-essential
+      - name: macOS universal targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Package with Pake
+        shell: bash
+        run: |
+          mkdir -p desktop/out
+          VERSION=$(node -p "require('./package.json').version")
+          [[ "$GITHUB_REF_TYPE" == tag ]] && VERSION="${GITHUB_REF_NAME#v}"
+          # Windows installers only accept numeric x.y.z, so drop any "-beta.N" suffix.
+          npx -y pake-cli@3.18.0 ./dist/index.html --use-local-file --name CytoPop \
+            --identifier io.github.chetanbasuray.cytopop --width 1280 --height 860 \
+            --app-version "${VERSION%%-*}" ${{ matrix.args }}
+          find . -maxdepth 1 \( -name '*.dmg' -o -name '*.msi' -o -name '*.deb' \) -exec mv {} desktop/out/ \;
+          ls -la desktop/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cytopop-${{ runner.os }}
+          path: desktop/out/*
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" desktop/out/* --clobber
