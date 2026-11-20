@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { useRef, useState } from "react";
+import iconUrl from "./icon.svg";
 
 type Mode = "system" | "light" | "dark";
 const MODES: { mode: Mode; label: string; icon: React.ReactNode }[] = [
@@ -63,6 +64,7 @@ export function TopBar(props: {
   return (
     <AppBar position="sticky" sx={{ borderBottom: 1, borderColor: "divider", bgcolor: "background.paper" }}>
       <Toolbar sx={{ gap: 1, minHeight: { xs: 56, sm: 64 } }}>
+        <Box component="img" src={iconUrl} alt="" sx={{ width: 28, height: 28, display: "block" }} />
         <Typography variant="h1" component="h1">CytoPop</Typography>
         <Chip label="Beta" size="small" variant="outlined" sx={{ height: 20, fontSize: 11, color: "text.secondary" }} />
         <Box sx={{ flex: 1 }} />
