@@ -4,7 +4,25 @@ export interface Population {
   id: string;
   name: string;
   parentId: string | null; // null = child of "All events"
-  gate: Gate;
+  gate: Gate | BooleanGate;
+}
+
+export type BooleanOp = "and" | "or" | "not";
+/** Combines other populations' events; the result is still limited to the population's parent. */
+export interface BooleanGate {
+  kind: "boolean";
+  op: BooleanOp;
+  of: string[];
+}
+
+function combine(op: BooleanOp, inputs: Uint8Array[], n: number): Uint8Array {
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (op === "not") out[i] = inputs[0]![i] ? 0 : 1;
+    else if (op === "and") out[i] = inputs.every((m) => m[i]) ? 1 : 0;
+    else out[i] = inputs.some((m) => m[i]) ? 1 : 0;
+  }
+  return out;
 }
 
 export interface PopulationStats {
@@ -117,7 +135,18 @@ export function evaluate(populations: Population[], names: string[], data: Float
     const parent = p.parentId === null ? undefined : byId.get(p.parentId);
     if (p.parentId !== null && !parent) throw new Error(`Population ${p.name} has a missing parent`);
     const within = parent ? visit(parent, stack) : undefined;
-    const mask = applyGate(p.gate, names, data, within);
+    const g = p.gate;
+    let mask: Uint8Array;
+    if (g.kind === "boolean") {
+      if (g.op === "not" ? g.of.length !== 1 : g.of.length < 2) throw new Error(`Population ${p.name} has the wrong number of inputs`);
+      const inputs = g.of.map((id) => {
+        const q = byId.get(id);
+        if (!q) throw new Error(`Population ${p.name} uses a missing population`);
+        return visit(q, stack);
+      });
+      mask = combine(g.op, inputs, data[0]?.length ?? 0);
+      if (within) for (let i = 0; i < mask.length; i++) mask[i]! &= within[i]!;
+    } else mask = applyGate(g, names, data, within);
     masks.set(p.id, mask);
     return mask;
   };

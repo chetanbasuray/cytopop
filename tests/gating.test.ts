@@ -98,3 +98,21 @@ test("channelStats rcv on values 1..101", () => {
   expect(s.rsd).toBeCloseTo(34.13, 5);
   expect(s.rcv).toBeCloseTo((100 * 34.13) / 51, 5);
 });
+
+test("Boolean populations", () => {
+  const x: Population = { id: "x", name: "High X", parentId: null, gate: { kind: "range", x: X, min: 0.5, max: 2 } };
+  const y: Population = { id: "y", name: "High Y", parentId: null, gate: { kind: "range", x: Y, min: 0.5, max: 2 } };
+  const xs = Array.from(evaluate([x], names, data).get("x")!);
+  const ys = Array.from(evaluate([y], names, data).get("y")!);
+  const run = (op: "and" | "or" | "not", of: string[], parentId: string | null = null) =>
+    Array.from(evaluate([x, y, { id: "b", name: "B", parentId, gate: { kind: "boolean", op, of } }], names, data).get("b")!);
+  expect(run("and", ["x", "y"])).toEqual(xs.map((v, i) => v & ys[i]!));
+  expect(run("or", ["x", "y"])).toEqual(xs.map((v, i) => v | ys[i]!));
+  expect(run("not", ["x"])).toEqual(xs.map((v) => 1 - v));
+  // Under a parent, the result stays inside the parent.
+  expect(run("not", ["y"], "x")).toEqual(xs.map((v, i) => v & (1 - ys[i]!)));
+  expect(() => run("not", ["x", "y"])).toThrow();
+  expect(() => run("and", ["x"])).toThrow();
+  expect(() => run("or", ["x", "gone"])).toThrow();
+  expect(() => run("or", ["x", "b"])).toThrow();
+});

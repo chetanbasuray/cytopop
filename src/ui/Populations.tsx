@@ -1,5 +1,5 @@
 import DeleteOutline from "@mui/icons-material/DeleteOutlineOutlined";
-import { Box, IconButton, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
+import { Box, Button, IconButton, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
 import type { Population, PopulationStats } from "../core/populations";
 import { MONO } from "./theme";
 
@@ -13,6 +13,7 @@ export function Populations(props: {
   parent: string | null;
   onSelectPopulation: (id: string | null) => void;
   onRemovePopulation: (id: string) => void;
+  onCombine: () => void;
 }) {
   const { populations, stats } = props;
 
@@ -60,7 +61,14 @@ export function Populations(props: {
   return (
     <Paper component="aside" sx={{ p: 2 }}>
       <section>
-        <Typography variant="h2" sx={{ color: "text.secondary", mb: 1, px: 1.5 }}>Populations</Typography>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1, px: 1.5 }}>
+          <Typography variant="h2" sx={{ color: "text.secondary" }}>Populations</Typography>
+          <Tooltip title="Combine populations with AND, OR or NOT">
+            <span>
+              <Button size="small" onClick={props.onCombine} disabled={populations.length === 0}>Combine</Button>
+            </span>
+          </Tooltip>
+        </Box>
         <Box component="ul" aria-label="Population tree" sx={{ m: 0, p: 0, display: "grid", gap: 0.5 }}>
           {node(null, "All events", props.totalEvents ? props.totalEvents.toLocaleString() : "", 0)}
         </Box>
