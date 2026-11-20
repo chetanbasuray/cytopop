@@ -18,20 +18,19 @@ export function ScaleSettings(props: {
   spec: TransformSpec;
   defaults: TransformSpec;
   onChange: (spec: TransformSpec) => void;
-  disabled?: boolean;
 }) {
   const { spec } = props;
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const open = Boolean(anchorEl);
 
-  const isDisabled = props.disabled || spec.kind === "linear" || spec.kind === "log";
+  // Linear and log have nothing to tune.
+  if (spec.kind === "linear" || spec.kind === "log") return null;
 
   return (
     <>
       <Tooltip title={`${props.label} settings`}>
         <IconButton
           onClick={(e) => setAnchorEl(e.currentTarget)}
-          disabled={isDisabled}
           aria-label={`${props.label} settings`}
         >
           <TuneOutlined />
