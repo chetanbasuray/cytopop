@@ -1,0 +1,47 @@
+name: Release
+
+# Every push to main is checked by semantic-release. A feat or fix commit since the last tag
+# publishes the next beta (v0.1.0-beta.N) as a GitHub prerelease, then the desktop apps are
+# built and attached to it. Other commit types publish nothing.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      # Nobody reviews the release itself, so a failing check must stop it.
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "tag=$(git tag --points-at HEAD --list 'v*' | head -1)" >> "$GITHUB_OUTPUT"
+
+  # Releases made with GITHUB_TOKEN do not trigger other workflows, so call the desktop build directly.
+  desktop:
+    needs: release
+    if: needs.release.outputs.tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
