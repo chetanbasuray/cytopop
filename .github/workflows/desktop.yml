@@ -17,10 +17,13 @@ jobs:
         include:
           - os: macos-latest
             args: --multi-arch
+            icon: desktop/icons/icon.icns
           - os: windows-latest
             args: ""
+            icon: desktop/icons/icon.ico
           - os: ubuntu-24.04
             args: --targets deb
+            icon: desktop/icons/icon.png
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +51,7 @@ jobs:
           # Windows installers only accept numeric x.y.z, so drop any "-beta.N" suffix.
           npx -y pake-cli@3.18.0 ./dist/index.html --use-local-file --name CytoPop \
             --identifier io.github.chetanbasuray.cytopop --width 1280 --height 860 \
-            --app-version "${VERSION%%-*}" ${{ matrix.args }}
+            --app-version "${VERSION%%-*}" --icon "${{ matrix.icon }}" ${{ matrix.args }}
           find . -maxdepth 1 \( -name '*.dmg' -o -name '*.msi' -o -name '*.deb' \) -exec mv {} desktop/out/ \;
           ls -la desktop/out
       - uses: actions/upload-artifact@v4

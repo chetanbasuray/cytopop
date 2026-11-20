@@ -10,9 +10,11 @@
     "dev": "bun --hot ./index.html",
     "build": "bun build ./index.html --outdir dist --production",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons": "bun scripts/make-icons.ts"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@types/bun": "latest",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
