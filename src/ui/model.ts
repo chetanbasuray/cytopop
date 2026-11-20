@@ -61,7 +61,11 @@ export function descendants(populations: Population[], id: string): Set<string> 
   let grew = true;
   while (grew) {
     grew = false;
-    for (const p of populations) if (p.parentId && out.has(p.parentId) && !out.has(p.id)) out.add(p.id), (grew = true);
+    for (const p of populations) {
+      // Boolean populations go with any population they combine.
+      const uses = (p.parentId !== null && out.has(p.parentId)) || (p.gate.kind === "boolean" && p.gate.of.some((id) => out.has(id)));
+      if (uses && !out.has(p.id)) out.add(p.id), (grew = true);
+    }
   }
   return out;
 }

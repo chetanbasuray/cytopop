@@ -107,6 +107,7 @@ export function PlotPanel(props: {
     }
     for (const p of populations.filter((q) => q.parentId === parent)) {
       const g = p.gate;
+      if (g.kind === "boolean") continue;
       const fits = g.kind === "range" ? !yDim && sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim);
       if (!fits) continue;
       const pct = stats.find((s) => s.id === p.id)?.percentParent;
@@ -276,6 +277,7 @@ export function PlotPanel(props: {
   const hidden = populations.filter((q) => {
     if (q.parentId !== parent) return false;
     const g = q.gate;
+    if (g.kind === "boolean") return false;
     const onAxes = g.kind === "range" ? !yDim && g.x.param === xDim.param : !!yDim && g.x.param === xDim.param && g.y.param === yDim.param;
     return onAxes && !(g.kind === "range" ? sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim));
   }).length;

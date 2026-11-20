@@ -10,6 +10,7 @@ import {
   type Sample, type Template, type Tool,
 } from "./model";
 import { Footer } from "./Footer";
+import { CombineDialog } from "./CombineDialog";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
@@ -56,6 +57,7 @@ export function App() {
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
+  const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -296,6 +298,7 @@ export function App() {
             parent={parent}
             onSelectPopulation={setParent}
             onRemovePopulation={removePopulation}
+            onCombine={() => setCombining(true)}
           />
         </Box>
         <Box sx={{ gridArea: "plot", minWidth: 0 }}>
@@ -341,6 +344,15 @@ export function App() {
       </Box>
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
+      <CombineDialog
+        open={combining}
+        populations={populations}
+        onCancel={() => setCombining(false)}
+        onConfirm={(name, op, of) => {
+          setPopulations((p) => [...p, { id: newId(), name, parentId: parent, gate: { kind: "boolean", op, of } }]);
+          setCombining(false);
+        }}
+      />
       <Snackbar
         open={!!toast}
         autoHideDuration={toast?.severity === "error" ? 8000 : 4000}
