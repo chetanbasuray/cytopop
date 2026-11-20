@@ -481,8 +481,12 @@ function addSample(name: string, file: FcsFile): void {
   state.active ??= id;
 }
 
+const DEMO_NAME = "Demo sample (synthetic)";
 $("load-demo").onclick = () => {
-  addSample("Demo sample (synthetic)", demoSample());
+  // The demo is deterministic, so a second click selects the loaded copy instead of adding a duplicate.
+  const existing = state.samples.find((s) => s.name === DEMO_NAME);
+  if (existing) state.active = existing.id;
+  else addSample(DEMO_NAME, demoSample());
   render();
 };
 
