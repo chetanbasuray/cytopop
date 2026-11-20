@@ -58,3 +58,19 @@ export function compensate(names: string[], data: Float32Array[], spill: Spillov
   idx.forEach((i, k) => (out[i] = targets[k]!));
   return out;
 }
+
+/** True for a well-formed square spillover matrix (used to check templates loaded from disk). */
+export function isSpillover(x: unknown): x is Spillover {
+  if (!x || typeof x !== "object") return false;
+  const { parameters, matrix } = x as Spillover;
+  return (
+    Array.isArray(parameters) && parameters.every((p) => typeof p === "string") &&
+    Array.isArray(matrix) && matrix.length === parameters.length &&
+    matrix.every((row) => Array.isArray(row) && row.length === parameters.length && row.every((v) => typeof v === "number" && Number.isFinite(v)))
+  );
+}
+
+/** The edited matrix wins for every sample that has all of its detectors; otherwise the file's own. */
+export function spilloverFor(names: string[], own: Spillover | undefined, edited: Spillover | undefined): Spillover | undefined {
+  return edited && edited.parameters.every((p) => names.includes(p)) ? edited : own;
+}

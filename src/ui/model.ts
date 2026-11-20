@@ -1,4 +1,5 @@
-import { compensate } from "../core/compensation";
+import { compensate, isSpillover, spilloverFor } from "../core/compensation";
+import type { Spillover } from "../core/fcs";
 import type { FcsFile } from "../core/fcs";
 import type { Dimension } from "../core/gates";
 import type { Population } from "../core/populations";
@@ -14,20 +15,28 @@ export interface Sample {
   file: FcsFile;
   names: string[];
   compensated?: Float32Array[];
+  compensatedWith?: string; // JSON of the matrix behind `compensated`
 }
 
 export interface Template {
   populations: Population[];
   scales: Record<string, TransformSpec>;
+  spillover?: Spillover; // edited compensation matrix
 }
 
 export function isTemplate(t: unknown): t is Template {
-  return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object";
+  return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object" &&
+    ((t as Template).spillover === undefined || isSpillover((t as Template).spillover));
 }
 
-export function columns(s: Sample, useCompensation: boolean): Float32Array[] {
-  if (!useCompensation || !s.file.spillover) return s.file.data;
-  s.compensated ??= compensate(s.names, s.file.data, s.file.spillover);
+export function columns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {
+  const spill = spilloverFor(s.names, s.file.spillover, edited);
+  if (!useCompensation || !spill) return s.file.data;
+  const key = JSON.stringify(spill);
+  if (s.compensatedWith !== key || !s.compensated) {
+    s.compensated = compensate(s.names, s.file.data, spill);
+    s.compensatedWith = key;
+  }
   return s.compensated;
 }
 

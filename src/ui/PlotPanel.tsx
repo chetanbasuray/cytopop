@@ -7,7 +7,7 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Straighten from "@mui/icons-material/Straighten";
 import WindowOutlined from "@mui/icons-material/WindowOutlined";
 import {
-  Alert, Box, Button, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, IconButton, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +15,8 @@ import { quadrants, type Dimension, type Gate, type Quadrant } from "../core/gat
 import type { Population, PopulationStats } from "../core/populations";
 import { fromSpec, type TransformSpec } from "../core/transforms";
 import { ScaleSettings } from "./ScaleSettings";
+import type { Spillover } from "../core/fcs";
+import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
 import { drawAxes, drawDensity, drawGate, drawHistogram, frame, M, type Frame } from "./plot";
 
@@ -52,6 +54,8 @@ export function PlotPanel(props: {
   scaleDefaults: (param: string, kind: TransformSpec["kind"]) => TransformSpec;
   onTool: (t: Tool) => void;
   onCompensation: (on: boolean) => void;
+  spill: Spillover | undefined;
+  onEditMatrix: () => void;
   onGate: (g: Gate) => void;
   onQuadrants: (g: Record<Quadrant, Gate>) => void;
   onOpen: () => void;
@@ -291,12 +295,19 @@ export function PlotPanel(props: {
         {select("Y axis", props.y, props.onY, [[HIST, "Histogram"], ...params])}
         {select("Y scale", yDim?.scale.kind ?? "linear", (v) => props.onScale(props.y, v as TransformSpec["kind"]), SCALES, histogram)}
         {yDim && settings("Y scale", yDim.scale, props.y)}
-        <Tooltip title={sample.file.spillover ? "Apply the spillover matrix stored in the file" : "This file has no spillover matrix"}>
+        <Tooltip title={props.spill ? "Apply the compensation matrix" : "This file has no spillover matrix"}>
           <FormControlLabel
             sx={{ ml: 0.5 }}
-            control={<Switch checked={props.useComp && !!sample.file.spillover} disabled={!sample.file.spillover} onChange={(e) => props.onCompensation(e.target.checked)} />}
+            control={<Switch checked={props.useComp && !!props.spill} disabled={!props.spill} onChange={(e) => props.onCompensation(e.target.checked)} />}
             label="Compensate"
           />
+        </Tooltip>
+        <Tooltip title="Edit the compensation matrix">
+          <span>
+            <IconButton aria-label="Edit the compensation matrix" disabled={!props.spill} onClick={props.onEditMatrix}>
+              <GridOnOutlined />
+            </IconButton>
+          </span>
         </Tooltip>
       </Stack>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 1.5, flexWrap: "wrap" }} useFlexGap>

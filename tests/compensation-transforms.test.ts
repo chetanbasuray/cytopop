@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { CompensationError, compensate, invert } from "../src/core/compensation";
+import { CompensationError, compensate, invert, isSpillover, spilloverFor } from "../src/core/compensation";
 import { arcsinh, fromSpec, linear, log, logicle } from "../src/core/transforms";
 
 test("invert returns the inverse matrix", () => {
@@ -48,4 +48,29 @@ test("linear, log, arcsinh round trip and fromSpec rebuilds", () => {
   }
   expect(log(1, 1e4).forward(100)).toBeCloseTo(0.5);
   expect(log(1, 1e4).forward(-5)).toBe(0);
+});
+
+test("an edited matrix replaces the file's and applies to samples with its detectors", () => {
+  const own = { parameters: ["FITC", "PE"], matrix: [[1, 0.2], [0, 1]] };
+  // The file under-reports spillover: really 25% of FITC lands in PE.
+  const edited = { parameters: ["FITC", "PE"], matrix: [[1, 0.25], [0, 1]] };
+  const names = ["FSC", "FITC", "PE"];
+  const data = [new Float32Array([5]), new Float32Array([1000]), new Float32Array([250])];
+  expect(compensate(names, data, own)[2]![0]).toBeCloseTo(50, 3);
+  const spill = spilloverFor(names, own, edited)!;
+  expect(spill).toBe(edited);
+  expect(compensate(names, data, spill)[2]![0]).toBeCloseTo(0, 3);
+  // The original is untouched, so restoring it is just dropping the edit.
+  expect(own.matrix[0]![1]).toBe(0.2);
+  expect(spilloverFor(names, own, undefined)).toBe(own);
+  // A sample missing a detector keeps its own matrix.
+  expect(spilloverFor(["FSC", "FITC"], undefined, edited)).toBeUndefined();
+});
+
+test("isSpillover accepts only square numeric matrices", () => {
+  expect(isSpillover({ parameters: ["A", "B"], matrix: [[1, 0.1], [0, 1]] })).toBe(true);
+  expect(isSpillover({ parameters: ["A", "B"], matrix: [[1, 0.1]] })).toBe(false);
+  expect(isSpillover({ parameters: ["A"], matrix: [["1"]] })).toBe(false);
+  expect(isSpillover({ parameters: [1], matrix: [[1]] })).toBe(false);
+  expect(isSpillover(null)).toBe(false);
 });

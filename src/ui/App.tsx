@@ -6,11 +6,14 @@ import type { Dimension, Gate, Quadrant } from "../core/gates";
 import { channelStats, DEFAULT_STATS, evaluate, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
-  columns, DEMO_NAME, defaultScale, descendants, download, HIST, isTemplate, newId, retarget,
+  columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
   type Sample, type Template, type Tool,
 } from "./model";
 import { Footer } from "./Footer";
+import { spilloverFor } from "../core/compensation";
+import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
+import { MatrixDialog } from "./MatrixDialog";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
@@ -54,6 +57,8 @@ export function App() {
   const [yRaw, setY] = useState("");
   const [tool, setTool] = useState<Tool>("none");
   const [useComp, setUseComp] = useState(true);
+  const [editedSpill, setEditedSpill] = useState<Spillover | undefined>(stored?.spillover);
+  const [editingMatrix, setEditingMatrix] = useState(false);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -75,11 +80,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales]);
+  }, [populations, scales, editedSpill]);
 
   useEffect(() => {
     try {
@@ -89,7 +94,7 @@ export function App() {
     }
   }, [statKeys]);
 
-  const cols = sample ? columns(sample, useComp) : undefined;
+  const cols = sample ? columns(sample, useComp, editedSpill) : undefined;
   const evaluated = useMemo(() => {
     if (!sample || !cols) return { masks: undefined, error: undefined };
     try {
@@ -186,7 +191,7 @@ export function App() {
 
   // ---------- templates and export ----------
   const saveTemplate = () =>
-    download("cytopop-template.json", JSON.stringify({ populations, scales } satisfies Template, null, 2), "application/json");
+    download("cytopop-template.json", JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}) } satisfies Template, null, 2), "application/json");
 
   const loadTemplate = async (file: File) => {
     try {
@@ -194,6 +199,7 @@ export function App() {
       if (!isTemplate(t)) throw new Error("This file is not a CytoPop gating template");
       setPopulations(t.populations);
       setScales((s) => ({ ...s, ...t.scales }));
+      setEditedSpill(t.spillover);
       setParent(null);
       setToast({ severity: "info", message: `Loaded ${t.populations.length} populations from ${file.name}` });
     } catch (err) {
@@ -205,7 +211,7 @@ export function App() {
     const rows: (string | number)[][] = [];
     const picked = STATS.filter((st) => statKeys.includes(st.key));
     for (const s of samples) {
-      const data = columns(s, useComp);
+      const data = columns(s, useComp, editedSpill);
       let masks: Map<string, Uint8Array>;
       try {
         masks = evaluate(populations, s.names, data);
@@ -323,6 +329,8 @@ export function App() {
             scaleDefaults={(name, kind) => retarget(defaultScale(sample, name), kind)}
             onTool={setTool}
             onCompensation={setUseComp}
+            spill={sample ? spilloverFor(sample.names, sample.file.spillover, editedSpill) : undefined}
+            onEditMatrix={() => setEditingMatrix(true)}
             onGate={onGate}
             onQuadrants={onQuadrants}
             onOpen={() => fileInput.current?.click()}
@@ -344,6 +352,15 @@ export function App() {
       </Box>
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
+      <MatrixDialog
+        open={editingMatrix}
+        spill={sample ? spilloverFor(sample.names, sample.file.spillover, editedSpill) : undefined}
+        edited={!!sample && !!editedSpill && spilloverFor(sample.names, sample.file.spillover, editedSpill) === editedSpill}
+        label={(n) => (sample ? paramLabel(sample, n) : n)}
+        onChange={setEditedSpill}
+        onRestore={() => setEditedSpill(undefined)}
+        onClose={() => setEditingMatrix(false)}
+      />
       <CombineDialog
         open={combining}
         populations={populations}
