@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyGate, GateError, pointInPolygon, quadrants, type Dimension } from "../src/core/gates";
-import { channelStats, count, evaluate, pathOf, populationStats, toCsv, type Population } from "../src/core/populations";
+import { channelStats, count, evaluate, pathOf, populationStats, toCsv, STATS, type Population } from "../src/core/populations";
 
 const lin = { kind: "linear", min: 0, max: 100 } as const;
 const X: Dimension = { param: "X", scale: lin };
@@ -60,4 +60,41 @@ test("population tree, stats and CSV", () => {
   expect(channelStats(new Float32Array(0)).mean).toBeNaN();
 
   expect(toCsv(["Name", "Count"], [["A, B", 1.23456], ['say "hi"', NaN]])).toBe('Name,Count\n"A, B",1.235\n"say ""hi""",\n');
+});
+
+test("channelStats basic stats on [1, 2, 3, 4]", () => {
+  const values = new Float32Array([1, 2, 3, 4]);
+  const s = channelStats(values);
+  expect(s.median).toBe(2.5);
+  expect(s.mean).toBe(2.5);
+  expect(s.sd).toBeCloseTo(1.29099, 5);
+  expect(s.p25).toBe(1.75);
+  expect(s.p75).toBe(3.25);
+});
+
+test("channelStats geoMean ignores non-positive values", () => {
+  const s1 = channelStats(new Float32Array([1, 10, 100]));
+  expect(s1.geoMean).toBeCloseTo(10, 5);
+  const s2 = channelStats(new Float32Array([-5, 0, 4, 16]));
+  expect(s2.geoMean).toBeCloseTo(8, 5);
+});
+
+test("channelStats all-zero mask returns NaN for every key", () => {
+  const values = new Float32Array([1, 2, 3]);
+  const mask = new Uint8Array([0, 0, 0]);
+  const s = channelStats(values, mask);
+  for (const stat of STATS) {
+    expect(s[stat.key]).toBeNaN();
+  }
+});
+
+test("channelStats rcv on values 1..101", () => {
+  const n = 101;
+  const values = new Float32Array(n);
+  for (let i = 0; i < n; i++) values[i] = i + 1;
+  const s = channelStats(values);
+  // Percentiles 84.13 and 15.87 of 1..101 are 85.13 and 16.87, so the robust SD is 34.13.
+  expect(s.median).toBe(51);
+  expect(s.rsd).toBeCloseTo(34.13, 5);
+  expect(s.rcv).toBeCloseTo((100 * 34.13) / 51, 5);
 });

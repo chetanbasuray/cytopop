@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import type { Dimension, Gate, Quadrant } from "../core/gates";
-import { channelStats, evaluate, populationStats, toCsv, type Population } from "../core/populations";
+import { channelStats, evaluate, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, HIST, isTemplate, newId, retarget,
@@ -18,6 +18,17 @@ import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
 
 const STORE_KEY = "cytopop.template.v1";
+const STATS_KEY = "cytopop.stats.v1";
+
+function loadStatKeys(): StatKey[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(STATS_KEY) ?? "null");
+    const keys = Array.isArray(raw) ? STATS.map((s) => s.key).filter((k) => raw.includes(k)) : [];
+    return keys.length ? keys : ["median", "mean", "cv"];
+  } catch {
+    return ["median", "mean", "cv"];
+  }
+}
 
 function loadStored(): Template | undefined {
   try {
@@ -42,7 +53,8 @@ export function App() {
   const [yRaw, setY] = useState("");
   const [tool, setTool] = useState<Tool>("none");
   const [useComp, setUseComp] = useState(true);
-  const [statRaw, setStatChannel] = useState("");
+  const [statRaw, setStatChannels] = useState<string[]>([]);
+  const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -51,7 +63,8 @@ export function App() {
   const names = sample?.names ?? [];
   const x = names.includes(xRaw) ? xRaw : (names.find((n) => /^FSC-A/i.test(n)) ?? names[0] ?? "");
   const y = yRaw === HIST || names.includes(yRaw) ? yRaw : (names.find((n) => /^SSC-A/i.test(n)) ?? names[1] ?? names[0] ?? "");
-  const statChannel = names.includes(statRaw) ? statRaw : x;
+  const kept = statRaw.filter((n) => names.includes(n));
+  const statChannels = kept.length ? kept : [x];
   const histogram = y === HIST;
 
   const scaleFor = useCallback((name: string) => scales[name] ?? defaultScale(sample, name), [scales, sample]);
@@ -65,6 +78,14 @@ export function App() {
       /* per-viewer convenience only */
     }
   }, [populations, scales]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(statKeys));
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [statKeys]);
 
   const cols = sample ? columns(sample, useComp) : undefined;
   const evaluated = useMemo(() => {
@@ -180,6 +201,7 @@ export function App() {
 
   const exportCsv = () => {
     const rows: (string | number)[][] = [];
+    const picked = STATS.filter((st) => statKeys.includes(st.key));
     for (const s of samples) {
       const data = columns(s, useComp);
       let masks: Map<string, Uint8Array>;
@@ -189,16 +211,21 @@ export function App() {
         rows.push([s.name, `Error: ${(err as Error).message}`]);
         continue;
       }
-      const col = data[s.names.indexOf(statChannel)];
-      const none = { median: NaN, mean: NaN, cv: NaN };
-      const all = col ? channelStats(col) : none;
-      rows.push([s.name, "All events", s.file.eventCount, 100, 100, all.median, all.mean, all.cv]);
+      const values = (mask?: Uint8Array) =>
+        statChannels.flatMap((ch) => {
+          const col = data[s.names.indexOf(ch)];
+          const c = col ? channelStats(col, mask) : undefined;
+          return picked.map((st) => (c ? c[st.key] : NaN));
+        });
+      rows.push([s.name, "All events", s.file.eventCount, 100, 100, ...values()]);
       for (const p of populationStats(populations, masks, s.file.eventCount)) {
-        const c = col ? channelStats(col, masks.get(p.id)) : none;
-        rows.push([s.name, p.path, p.count, p.percentParent, p.percentTotal, c.median, c.mean, c.cv]);
+        rows.push([s.name, p.path, p.count, p.percentParent, p.percentTotal, ...values(masks.get(p.id))]);
       }
     }
-    const header = ["Sample", "Population", "Count", "% parent", "% total", `Median ${statChannel}`, `Mean ${statChannel}`, `CV % ${statChannel}`];
+    const header = [
+      "Sample", "Population", "Count", "% parent", "% total",
+      ...statChannels.flatMap((ch) => picked.map((st) => `${st.label} ${ch}`)),
+    ];
     download("cytopop-statistics.csv", toCsv(header, rows), "text/csv");
   };
 
@@ -303,8 +330,10 @@ export function App() {
             cols={cols}
             masks={evaluated.masks}
             stats={stats}
-            channel={statChannel}
-            onChannel={setStatChannel}
+            channels={statChannels}
+            onChannels={setStatChannels}
+            statKeys={statKeys}
+            onStatKeys={setStatKeys}
           />
         </Box>
       </Box>
