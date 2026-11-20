@@ -2,7 +2,7 @@
 //   desktop/icons/icon.png  (Linux, 512 px)
 //   desktop/icons/icon.ico  (Windows, PNG entries 16 to 256 px)
 //   desktop/icons/icon.icns (macOS, PNG entries 16 to 1024 px)
-// Run with `bun run icons` after changing the SVG, and commit the results.
+// The desktop workflow runs this before packaging; run `bun run icons` locally only to preview them.
 import { Resvg } from "@resvg/resvg-js";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 

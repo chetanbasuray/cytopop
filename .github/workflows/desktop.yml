@@ -42,6 +42,8 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - name: Generate desktop icons from src/ui/icon.svg
+        run: bun run icons
       - name: Package with Pake
         shell: bash
         run: |

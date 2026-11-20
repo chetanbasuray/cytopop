@@ -1,5 +1,6 @@
 node_modules/
 dist/
 desktop/out/
+desktop/icons/
 *.fcs
 .DS_Store
