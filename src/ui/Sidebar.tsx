@@ -44,7 +44,7 @@ export function Sidebar(props: {
                 size="small"
                 aria-label={`Delete ${name} and its children`}
                 onClick={() => props.onRemovePopulation(id)}
-                sx={{ opacity: { xs: 1, md: 0 }, transition: "opacity 120ms", ml: 0.5 }}
+                sx={{ ml: 0.5, transition: "opacity 120ms", "@media (hover: hover) and (pointer: fine)": { opacity: 0 } }}
               >
                 <DeleteOutline fontSize="small" />
               </IconButton>

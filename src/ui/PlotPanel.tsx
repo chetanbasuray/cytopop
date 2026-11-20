@@ -22,9 +22,9 @@ const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log",
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; hint: string }[] = [
   { tool: "none", label: "Pointer", icon: <NearMeOutlined fontSize="small" />, hint: "" },
   { tool: "rect", label: "Rectangle", icon: <CropSquare fontSize="small" />, hint: "Drag to draw a rectangle" },
-  { tool: "polygon", label: "Polygon", icon: <PentagonOutlined fontSize="small" />, hint: "Click to add points, double-click or click the first point to close, Esc cancels" },
+  { tool: "polygon", label: "Polygon", icon: <PentagonOutlined fontSize="small" />, hint: "Click or tap to add points. Close by selecting the first point or Finish" },
   { tool: "ellipse", label: "Ellipse", icon: <PanoramaFishEye fontSize="small" />, hint: "Drag to draw an ellipse" },
-  { tool: "quad", label: "Quadrants", icon: <WindowOutlined fontSize="small" />, hint: "Click to place the quadrant centre" },
+  { tool: "quad", label: "Quadrants", icon: <WindowOutlined fontSize="small" />, hint: "Click or tap to place the quadrant centre" },
   { tool: "range", label: "Range", icon: <Straighten fontSize="small" />, hint: "Drag across the histogram" },
 ];
 
@@ -58,6 +58,7 @@ export function PlotPanel(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(520);
+  const [polygonPoints, setPolygonPoints] = useState(0); // mirrors draft.points.length for the Finish/Cancel bar
   const frameRef = useRef<Frame | null>(null);
   const draft = useRef<Draft>({ points: [] });
   const { mode, systemMode } = useColorScheme();
@@ -118,12 +119,17 @@ export function PlotPanel(props: {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const w = entry?.contentRect.width ?? 520;
-      setSize(Math.max(320, Math.min(680, Math.floor(w))));
-    });
+    // Also cap by viewport height so the whole plot fits on a landscape tablet without scrolling.
+    const fit = (w: number) => w > 0 && setSize(Math.max(320, Math.min(680, Math.floor(w), window.innerHeight - 260)));
+    const refit = () => fit(el.clientWidth);
+    refit(); // measure now; observer callbacks only arrive once the page renders a frame
+    const ro = new ResizeObserver(([entry]) => fit(entry?.contentRect.width ?? 0));
     ro.observe(el);
-    return () => ro.disconnect();
+    window.addEventListener("resize", refit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", refit);
+    };
   }, [sample]);
 
   useEffect(() => {
@@ -132,6 +138,7 @@ export function PlotPanel(props: {
 
   useEffect(() => {
     draft.current = { points: [] };
+    setPolygonPoints(0);
     draw();
   }, [tool]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -139,6 +146,7 @@ export function PlotPanel(props: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         draft.current = { points: [] };
+    setPolygonPoints(0);
         draw();
       }
     };
@@ -157,6 +165,7 @@ export function PlotPanel(props: {
   const finish = () => {
     const g = previewGate();
     draft.current = { points: [] };
+    setPolygonPoints(0);
     const tooSmall =
       !g ||
       (g.kind === "rectangle" && (g.xMax - g.xMin < 0.005 || g.yMax - g.yMin < 0.005)) ||
@@ -180,23 +189,42 @@ export function PlotPanel(props: {
       const d = draft.current;
       const first = d.points[0];
       const f = frameRef.current!;
-      if (first && d.points.length >= 3 && Math.hypot((first[0] - p[0]) * f.w, (first[1] - p[1]) * f.h) < 8) {
+      // Fingers need a bigger target than a mouse to hit the first point.
+      const reach = e.pointerType === "mouse" ? 8 : 24;
+      if (first && d.points.length >= 3 && Math.hypot((first[0] - p[0]) * f.w, (first[1] - p[1]) * f.h) < reach) {
         d.cursor = first;
         return finish();
       }
       d.points.push(p);
       d.cursor = p;
+      setPolygonPoints(d.points.length);
       draw();
       return;
     }
-    e.currentTarget.setPointerCapture(e.pointerId);
     draft.current = { start: p, points: [], cursor: p };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is a nicety (keeps the drag when leaving the canvas); drawing works without it */
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const d = draft.current;
     if (tool === "none" || (!d.start && !d.points.length)) return;
     d.cursor = toUnits(e);
+    draw();
+  };
+
+  const finishPolygon = () => {
+    const d = draft.current;
+    if (d.points.length < 3) return;
+    d.cursor = d.points[0]; // same as closing on the first point; finish() drops this trailing cursor
+    finish();
+  };
+  const cancelDraft = () => {
+    draft.current = { points: [] };
+    setPolygonPoints(0);
     draw();
   };
 
@@ -264,7 +292,15 @@ export function PlotPanel(props: {
             );
           })}
         </ToggleButtonGroup>
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>{hint}</Typography>
+        <Typography variant="caption" sx={{ color: "text.secondary", flex: "1 1 160px" }}>{hint}</Typography>
+        {tool === "polygon" && polygonPoints > 0 && (
+          <Stack direction="row" spacing={1}>
+            <Button size="small" onClick={cancelDraft}>Cancel</Button>
+            <Button size="small" variant="contained" disabled={polygonPoints < 3} onClick={finishPolygon}>
+              Finish
+            </Button>
+          </Stack>
+        )}
       </Stack>
       {props.error && <Alert severity="error" sx={{ mb: 1.5 }}>Gating error: {props.error}</Alert>}
       <Box ref={wrapRef} sx={{ width: "100%" }}>
@@ -276,7 +312,8 @@ export function PlotPanel(props: {
         onPointerMove={onPointerMove}
         onPointerUp={() => draft.current.start && finish()}
         onDoubleClick={onDoubleClick}
-        style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: "none", cursor: tool === "none" ? "default" : "crosshair" }}
+        onPointerCancel={cancelDraft}
+        style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: tool === "none" ? "pan-x pan-y pinch-zoom" : "none", cursor: tool === "none" ? "default" : "crosshair" }}
       />
       </Box>
       <Typography variant="body2" sx={{ color: "text.secondary", mt: 1 }}>

@@ -9,6 +9,8 @@ declare module "@mui/material/styles" {
   }
 }
 
+const COARSE = "@media (pointer: coarse)";
+
 export const MONO = '"Roboto Mono", ui-monospace, monospace';
 
 // Quiet neutral chrome with a deep teal accent; the density plot carries the colour.
@@ -43,7 +45,6 @@ export const theme = createTheme({
     h2: { fontSize: 14, fontWeight: 500 },
   },
   components: {
-    MuiButton: { defaultProps: { disableElevation: true } },
     MuiPaper: {
       defaultProps: { variant: "outlined" },
       styleOverrides: { rounded: { borderRadius: 12 } },
@@ -51,5 +52,11 @@ export const theme = createTheme({
     MuiAppBar: { defaultProps: { elevation: 0, color: "inherit" } },
     MuiTooltip: { defaultProps: { arrow: true } },
     MuiTableCell: { styleOverrides: { root: { whiteSpace: "nowrap" } } },
+    // Touch screens get 44 to 48 px targets; mouse users keep the compact sizes.
+    MuiToggleButton: { styleOverrides: { root: { [COARSE]: { minWidth: 44, minHeight: 44 } } } },
+    MuiIconButton: { styleOverrides: { root: { [COARSE]: { minWidth: 44, minHeight: 44 } } } },
+    MuiListItemButton: { styleOverrides: { root: { [COARSE]: { minHeight: 44 } } } },
+    MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { [COARSE]: { minHeight: 44 } } } },
+    MuiMenuItem: { styleOverrides: { root: { [COARSE]: { minHeight: 48 } } } },
   },
 });
