@@ -316,6 +316,8 @@ export function App() {
             onX={setX}
             onY={changeY}
             onScale={changeScale}
+            onScaleSpec={(name, spec) => setScales((s) => ({ ...s, [name]: spec }))}
+            scaleDefaults={(name, kind) => retarget(defaultScale(sample, name), kind)}
             onTool={setTool}
             onCompensation={setUseComp}
             onGate={onGate}
