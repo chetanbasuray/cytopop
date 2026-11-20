@@ -10,6 +10,24 @@ there is no server, and files are read locally.
 **Use it in the browser:** https://chetanbasuray.github.io/cytopop/
 **Desktop apps** (macOS, Windows, Linux) are attached to each [release](https://github.com/chetanbasuray/cytopop/releases).
 
+## System requirements
+
+| | Supported | Download |
+|---|---|---|
+| Browser | Current Chrome, Edge, Firefox or Safari | Nothing to install |
+| macOS | macOS 11 Big Sur or newer, Apple Silicon and Intel | `CytoPop.dmg` (one app for both chips) |
+| Windows | Windows 10 or 11 | `CytoPop.msi` |
+| Linux | Ubuntu 24.04 or newer, or another Debian-based distribution of the same age | `cytopop.deb` |
+
+Older systems may open the desktop app but show a broken page, because the app draws its window with the system's
+own web engine. If that happens, use the browser version in a current browser.
+
+The desktop apps are not signed yet, so the first launch shows a warning:
+
+- **macOS:** "cannot be opened because it is from an unidentified developer". Right-click CytoPop in Applications,
+  choose Open, then Open again. Or allow it under System Settings › Privacy & Security.
+- **Windows:** "Windows protected your PC". Select More info, then Run anyway.
+
 ## Features
 
 - Open FCS 2.0, 3.0 and 3.1 list-mode files (float, double and integer data, log amplification, gain).
