@@ -1,8 +1,9 @@
 name: Deploy web app
 
+# The Release workflow calls this after semantic-release, so a build from a release commit
+# already sees its new tag and the footer shows that version.
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -22,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the version in the footer
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run build

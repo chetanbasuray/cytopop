@@ -9,9 +9,11 @@ import {
   columns, DEMO_NAME, defaultScale, descendants, download, HIST, isTemplate, newId, retarget,
   type Sample, type Template, type Tool,
 } from "./model";
+import { Footer } from "./Footer";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
-import { Sidebar } from "./Sidebar";
+import { Populations } from "./Populations";
+import { SampleBar } from "./SampleBar";
 import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
 
@@ -200,8 +202,21 @@ export function App() {
     download("cytopop-statistics.csv", toCsv(header, rows), "text/csv");
   };
 
+  const status = sample && {
+    sample: sample.name,
+    population: parent ? (populations.find((p) => p.id === parent)?.name ?? "") : "All events",
+    shown: parent ? (stats.find((s) => s.id === parent)?.count ?? 0) : sample.file.eventCount,
+    total: sample.file.eventCount,
+  };
+
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
+    <Box
+      sx={(t) => ({
+        minHeight: "100dvh", display: "flex", flexDirection: "column", bgcolor: "background.default",
+        // Laptop and wider: the app fills the window and each column scrolls on its own.
+        [t.breakpoints.up("lg")]: { height: "100dvh" },
+      })}
+    >
       <input
         ref={fileInput}
         type="file"
@@ -214,61 +229,75 @@ export function App() {
         }}
       />
       <TopBar
-        onOpen={() => fileInput.current?.click()}
         onExport={exportCsv}
         canExport={samples.length > 0}
         onSaveTemplate={saveTemplate}
         onLoadTemplate={loadTemplate}
       />
+      <SampleBar
+        samples={samples}
+        active={active}
+        onSelect={setActive}
+        onOpen={() => fileInput.current?.click()}
+        onLoadDemo={loadDemo}
+      />
       <Box
         component="main"
-        sx={{
+        sx={(t) => ({
+          flex: 1,
           display: "grid",
           gap: 2,
           p: { xs: 2, md: 3 },
-          maxWidth: 1600,
-          mx: "auto",
-          gridTemplateColumns: { xs: "1fr", md: "264px minmax(0, 1fr)", xl: "264px auto minmax(0, 1fr)" },
           alignItems: "start",
-        }}
+          gridTemplateAreas: { xs: '"plot" "pops" "stats"', sm: '"pops plot" "stats stats"' },
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "200px minmax(0, 1fr)", md: "240px minmax(0, 1fr)" },
+          // One block per breakpoint: a second up("lg") key would replace this one, not merge with it.
+          [t.breakpoints.up("lg")]: {
+            gridTemplateAreas: '"pops plot stats"',
+            gridTemplateColumns: "240px minmax(0, 1fr) minmax(0, 1fr)",
+            minHeight: 0,
+            alignItems: "stretch",
+            "& > *": { minHeight: 0, overflow: "auto" },
+          },
+        })}
       >
-        <Sidebar
-          samples={samples}
-          active={active}
-          onSelectSample={setActive}
-          onLoadDemo={loadDemo}
-          populations={populations}
-          stats={stats}
-          totalEvents={sample?.file.eventCount}
-          parent={parent}
-          onSelectPopulation={setParent}
-          onRemovePopulation={removePopulation}
-        />
-        <PlotPanel
-          sample={sample}
-          cols={cols}
-          masks={evaluated.masks}
-          error={evaluated.error}
-          populations={populations}
-          stats={stats}
-          parent={parent}
-          x={x}
-          y={y}
-          xDim={xDim}
-          yDim={yDim}
-          tool={tool}
-          useComp={useComp}
-          onX={setX}
-          onY={changeY}
-          onScale={changeScale}
-          onTool={setTool}
-          onCompensation={setUseComp}
-          onGate={onGate}
-          onQuadrants={onQuadrants}
-          onOpen={() => fileInput.current?.click()}
-          onLoadDemo={loadDemo}
-        />
-        <Box sx={{ gridColumn: { md: "1 / -1", xl: "auto" }, minWidth: 0 }}>
+        <Box sx={{ gridArea: "pops", minWidth: 0 }}>
+          <Populations
+            populations={populations}
+            stats={stats}
+            totalEvents={sample?.file.eventCount}
+            parent={parent}
+            onSelectPopulation={setParent}
+            onRemovePopulation={removePopulation}
+          />
+        </Box>
+        <Box sx={{ gridArea: "plot", minWidth: 0 }}>
+          <PlotPanel
+            sample={sample}
+            cols={cols}
+            masks={evaluated.masks}
+            error={evaluated.error}
+            populations={populations}
+            stats={stats}
+            parent={parent}
+            x={x}
+            y={y}
+            xDim={xDim}
+            yDim={yDim}
+            tool={tool}
+            useComp={useComp}
+            onX={setX}
+            onY={changeY}
+            onScale={changeScale}
+            onTool={setTool}
+            onCompensation={setUseComp}
+            onGate={onGate}
+            onQuadrants={onQuadrants}
+            onOpen={() => fileInput.current?.click()}
+            onLoadDemo={loadDemo}
+          />
+        </Box>
+        <Box sx={{ gridArea: "stats", minWidth: 0 }}>
           <StatsPanel
             sample={sample}
             cols={cols}
@@ -279,6 +308,7 @@ export function App() {
           />
         </Box>
       </Box>
+      <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
       <Snackbar
         open={!!toast}

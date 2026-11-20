@@ -9,7 +9,7 @@ declare module "@mui/material/styles" {
   }
 }
 
-const COARSE = "@media (pointer: coarse)";
+export const COARSE = "@media (pointer: coarse)";
 
 export const MONO = '"Roboto Mono", ui-monospace, monospace';
 

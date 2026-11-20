@@ -2,12 +2,11 @@ import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
 import FileOpenOutlined from "@mui/icons-material/FileOpenOutlined";
-import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
 import LightModeOutlined from "@mui/icons-material/LightModeOutlined";
 import MoreVert from "@mui/icons-material/MoreVert";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import {
-  AppBar, Box, Button, Chip, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Toolbar, Tooltip, Typography,
+  AppBar, Box, Button, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { useRef, useState } from "react";
@@ -52,7 +51,6 @@ function ThemeMenu() {
 }
 
 export function TopBar(props: {
-  onOpen: () => void;
   onExport: () => void;
   canExport: boolean;
   onSaveTemplate: () => void;
@@ -61,7 +59,7 @@ export function TopBar(props: {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
   return (
-    <AppBar position="sticky" sx={{ borderBottom: 1, borderColor: "divider", bgcolor: "background.paper" }}>
+    <AppBar position="static" sx={{ borderBottom: 1, borderColor: "divider", bgcolor: "background.paper" }}>
       <Toolbar sx={{ gap: 1, minHeight: { xs: 56, sm: 64 } }}>
         <Box component="img" src={iconUrl} alt="" sx={{ width: 28, height: 28, display: "block" }} />
         <Typography variant="h1" component="h1">CytoPop</Typography>
@@ -75,10 +73,6 @@ export function TopBar(props: {
           sx={{ display: { xs: "none", sm: "inline-flex" } }}
         >
           Export CSV
-        </Button>
-        <Button variant="contained" startIcon={<FolderOpenOutlined />} onClick={props.onOpen} sx={{ whiteSpace: "nowrap" }}>
-          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>Open FCS files</Box>
-          <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>Open</Box>
         </Button>
         <ThemeMenu />
         <Tooltip title="More">
@@ -115,10 +109,6 @@ export function TopBar(props: {
           >
             <ListItemIcon><FileOpenOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Load gating template</ListItemText>
-          </MenuItem>
-          <Divider />
-          <MenuItem component="a" href="https://github.com/chetanbasuray/cytopop/issues" target="_blank" rel="noreferrer">
-            <ListItemText inset>Send feedback</ListItemText>
           </MenuItem>
         </Menu>
         <input
