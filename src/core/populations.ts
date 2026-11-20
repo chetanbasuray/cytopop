@@ -30,6 +30,7 @@ export const STATS: { key: StatKey; label: string }[] = [
   { key: "p75", label: "75th pct" },
   { key: "p95", label: "95th pct" },
 ];
+export const DEFAULT_STATS: StatKey[] = ["median", "mean", "cv"];
 export type ChannelStats = Record<StatKey, number>;
 
 function percentile(sorted: Float64Array, p: number): number {
