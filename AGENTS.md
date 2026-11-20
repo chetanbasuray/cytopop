@@ -37,6 +37,18 @@ templates loading: `applyGate` in `src/core/gates.ts` already treats `null` rect
 - Required to merge: `test` (typecheck, tests, build, icon generation) and `PR Title`.
 - Leave merging to the owner.
 
+## Picking work
+
+Choose the next issue in this order:
+
+1. `bug` issues where CytoPop produces wrong results (counts, percentages, compensation, statistics).
+2. Issues labelled `feedback`, since they come from real users. One still labelled `question` waits for the
+   tester's answer; ask in the issue instead of guessing.
+3. The feature milestones in order: Everyday analysis, Batch work, Figures, Interoperability, Specialised analyses.
+
+New tester feedback goes into the rolling `Feedback` milestone, or into the matching feature milestone when it
+clearly belongs there, and always gets the `feedback` label. Paraphrase it and leave out who said it.
+
 ## Code layout and conventions
 
 - `src/core` is pure TypeScript with no DOM or React: parsing, compensation, transforms, gates, population stats.
