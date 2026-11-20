@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import type { Dimension, Gate, Quadrant } from "../core/gates";
-import { channelStats, evaluate, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
+import { channelStats, DEFAULT_STATS, evaluate, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, HIST, isTemplate, newId, retarget,
@@ -24,9 +24,9 @@ function loadStatKeys(): StatKey[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(STATS_KEY) ?? "null");
     const keys = Array.isArray(raw) ? STATS.map((s) => s.key).filter((k) => raw.includes(k)) : [];
-    return keys.length ? keys : ["median", "mean", "cv"];
+    return keys.length ? keys : DEFAULT_STATS;
   } catch {
-    return ["median", "mean", "cv"];
+    return DEFAULT_STATS;
   }
 }
 

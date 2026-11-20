@@ -1,6 +1,6 @@
 import { MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import { useMemo } from "react";
-import { STATS, channelStats, type ChannelStats, type PopulationStats, type StatKey } from "../core/populations";
+import { DEFAULT_STATS, STATS, channelStats, type ChannelStats, type PopulationStats, type StatKey } from "../core/populations";
 import { paramLabel, type Sample } from "./model";
 import { MONO } from "./theme";
 
@@ -51,7 +51,10 @@ export function StatsPanel(props: {
     props.onChannels(newChannels);
   };
 
-  const handleStatKeysChange = (newKeys: StatKey[]) => {
+  const allStats = statKeys.length === STATS.length;
+  const handleStatKeysChange = (picked: (StatKey | "all")[]) => {
+    // The toggle row arrives as "all" in the selection; it flips between every statistic and the default set.
+    const newKeys = picked.includes("all") ? (allStats ? DEFAULT_STATS : STATS.map((s) => s.key)) : (picked as StatKey[]);
     if (newKeys.length === 0) return;
     const orderedKeys = newKeys.filter((k) => STATS.some((s) => s.key === k)).sort((a, b) => STATS.findIndex((s) => s.key === a) - STATS.findIndex((s) => s.key === b));
     props.onStatKeys(orderedKeys);
@@ -88,7 +91,7 @@ export function StatsPanel(props: {
               size="small"
               label="Statistics"
               value={statKeys}
-              onChange={(e) => handleStatKeysChange(e.target.value as unknown as StatKey[])}
+              onChange={(e) => handleStatKeysChange(e.target.value as unknown as (StatKey | "all")[])}
               slotProps={{
                 select: {
                   multiple: true,
@@ -97,6 +100,9 @@ export function StatsPanel(props: {
               }}
               sx={{ minWidth: 160, maxWidth: 240 }}
             >
+              <MenuItem value="all" divider>
+                {allStats ? "Default selection" : "Select all"}
+              </MenuItem>
               {STATS.map((s) => (
                 <MenuItem key={s.key} value={s.key}>
                   {s.label}
