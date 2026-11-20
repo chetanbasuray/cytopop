@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { quadrants, type Dimension, type Gate, type Quadrant } from "../core/gates";
 import type { Population, PopulationStats } from "../core/populations";
 import { fromSpec, type TransformSpec } from "../core/transforms";
+import { ScaleSettings } from "./ScaleSettings";
 import { HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
 import { drawAxes, drawDensity, drawGate, drawHistogram, frame, M, type Frame } from "./plot";
 
@@ -47,6 +48,8 @@ export function PlotPanel(props: {
   onX: (v: string) => void;
   onY: (v: string) => void;
   onScale: (param: string, kind: TransformSpec["kind"]) => void;
+  onScaleSpec: (param: string, spec: TransformSpec) => void;
+  scaleDefaults: (param: string, kind: TransformSpec["kind"]) => TransformSpec;
   onTool: (t: Tool) => void;
   onCompensation: (on: boolean) => void;
   onGate: (g: Gate) => void;
@@ -266,14 +269,26 @@ export function PlotPanel(props: {
     </TextField>
   );
   const params = names.map((n): [string, string] => [n, paramLabel(sample, n)]);
+  const settings = (label: string, spec: TransformSpec, param: string) => (
+    <ScaleSettings label={label} spec={spec} defaults={props.scaleDefaults(param, spec.kind)} onChange={(v) => props.onScaleSpec(param, v)} />
+  );
+  // Gates keep the scale they were drawn on, so tweaking a scale hides them without changing counts.
+  const hidden = populations.filter((q) => {
+    if (q.parentId !== parent) return false;
+    const g = q.gate;
+    const onAxes = g.kind === "range" ? !yDim && g.x.param === xDim.param : !!yDim && g.x.param === xDim.param && g.y.param === yDim.param;
+    return onAxes && !(g.kind === "range" ? sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim));
+  }).length;
 
   return (
     <Paper sx={{ p: 2, minWidth: 0 }}>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 2 }}>
         {select("X axis", props.x, props.onX, params)}
         {select("X scale", xDim.scale.kind, (v) => props.onScale(props.x, v as TransformSpec["kind"]), SCALES)}
+        {settings("X scale", xDim.scale, props.x)}
         {select("Y axis", props.y, props.onY, [[HIST, "Histogram"], ...params])}
         {select("Y scale", yDim?.scale.kind ?? "linear", (v) => props.onScale(props.y, v as TransformSpec["kind"]), SCALES, histogram)}
+        {yDim && settings("Y scale", yDim.scale, props.y)}
         <Tooltip title={sample.file.spillover ? "Apply the spillover matrix stored in the file" : "This file has no spillover matrix"}>
           <FormControlLabel
             sx={{ ml: 0.5 }}
@@ -294,6 +309,11 @@ export function PlotPanel(props: {
           })}
         </ToggleButtonGroup>
         <Typography variant="caption" sx={{ color: "text.secondary", flex: "1 1 160px" }}>{hint}</Typography>
+        {hidden > 0 && (
+          <Typography variant="caption" sx={{ color: "text.secondary", flexBasis: "100%" }}>
+            {hidden === 1 ? "1 gate is hidden because it was" : `${hidden} gates are hidden because they were`} drawn with other scale settings. Counts are unchanged
+          </Typography>
+        )}
         {tool === "polygon" && polygonPoints > 0 && (
           <Stack direction="row" spacing={1}>
             <Button size="small" onClick={cancelDraft}>Cancel</Button>
