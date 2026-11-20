@@ -22,6 +22,7 @@ there is no server, and files are read locally.
 - Export statistics for all samples to CSV.
 - Save and load gating templates (JSON) to reuse the same gates across experiments.
 - A built-in synthetic demo sample to try things out without data.
+- Light and dark themes that follow your system setting, or pick one from the theme menu.
 
 ## Roadmap
 
@@ -42,7 +43,7 @@ bun run build      # static web build in dist/
 ```
 
 The code is split into `src/core` (file parsing, compensation, scales, gates, statistics; no DOM, fully tested)
-and `src/ui` (the browser interface). Desktop apps are built by CI with [Pake](https://github.com/tw93/Pake)
+and `src/ui` (the browser interface, built with React and Material UI). Desktop apps are built by CI with [Pake](https://github.com/tw93/Pake)
 from the same static build.
 
 ## Contributing
