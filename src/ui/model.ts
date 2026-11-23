@@ -22,11 +22,13 @@ export interface Template {
   populations: Population[];
   scales: Record<string, TransformSpec>;
   spillover?: Spillover; // edited compensation matrix
+  samples?: string[]; // file names open when a workspace was saved
 }
 
 export function isTemplate(t: unknown): t is Template {
   return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object" &&
-    ((t as Template).spillover === undefined || isSpillover((t as Template).spillover));
+    ((t as Template).spillover === undefined || isSpillover((t as Template).spillover)) &&
+    ((t as Template).samples === undefined || (Array.isArray((t as Template).samples) && (t as Template).samples!.every((n) => typeof n === "string")));
 }
 
 export function columns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {

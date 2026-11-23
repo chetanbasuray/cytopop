@@ -39,7 +39,9 @@ The desktop apps are not signed yet, so the first launch shows a warning:
 - Population hierarchy: gate inside any population; every gate applies to all loaded samples.
 - Statistics per population: count, % of parent, % of total, and median, mean and CV of any channel.
 - Export statistics for all samples to CSV.
-- Save and load gating templates (JSON) to reuse the same gates across experiments.
+- Open samples are reopened after a reload; files stay in this browser's storage.
+- Save and open workspaces (JSON) to reuse the same gates across experiments or move an analysis to another
+  computer, where opening the same FCS files relinks it.
 - A built-in synthetic demo sample to try things out without data.
 - Light and dark themes that follow your system setting, or pick one from the theme menu.
 
