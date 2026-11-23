@@ -24,7 +24,7 @@ export const theme = createTheme({
       palette: {
         primary: { main: "#00696d", contrastText: "#ffffff" },
         gate: { main: "#c2185b", contrastText: "#ffffff" },
-        highlight: { main: "#d84315", contrastText: "#ffffff" }, // backgating, distinct from the gate colour
+        highlight: { main: "#bf360c", contrastText: "#ffffff" }, // backgating, distinct from the gate colour; 5.6:1 on white
         background: { default: "#f5f7f8", paper: "#ffffff" },
         divider: "rgba(23, 29, 31, 0.10)",
         text: { primary: "#171d1f", secondary: "#4a5457", disabled: "#8a9497" },
@@ -49,6 +49,16 @@ export const theme = createTheme({
     h2: { fontSize: 14, fontWeight: 500 },
   },
   components: {
+    // A clear ring for keyboard focus on everything clickable; text fields keep their own focused outline.
+    MuiCssBaseline: {
+      styleOverrides: {
+        // Plain selectors (not :where) so they outrank ButtonBase's own `outline: 0`.
+        "button:focus-visible, a:focus-visible, [role=button]:focus-visible, [role=option]:focus-visible, [role=menuitem]:focus-visible, [role=tab]:focus-visible": {
+          outline: "2px solid var(--mui-palette-primary-main)",
+          outlineOffset: 2,
+        },
+      },
+    },
     MuiPaper: {
       defaultProps: { variant: "outlined" },
       styleOverrides: { rounded: { borderRadius: 12 } },

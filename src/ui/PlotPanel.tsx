@@ -1,6 +1,7 @@
 import CropSquare from "@mui/icons-material/CropSquare";
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
 import GridGoldenratioOutlined from "@mui/icons-material/GridGoldenratioOutlined";
+import KeyboardOutlined from "@mui/icons-material/KeyboardOutlined";
 import SplitscreenOutlined from "@mui/icons-material/SplitscreenOutlined";
 import NearMeOutlined from "@mui/icons-material/NearMeOutlined";
 import PanoramaFishEye from "@mui/icons-material/PanoramaFishEye";
@@ -17,6 +18,7 @@ import { divider, hingedQuadrants, histogramDivider, quadrants, type Arm, type D
 import type { Population, PopulationStats } from "../core/populations";
 import { fromSpec, type TransformSpec } from "../core/transforms";
 import { ScaleSettings } from "./ScaleSettings";
+import { BoundsDialog } from "./BoundsDialog";
 import type { Spillover } from "../core/fcs";
 import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { descendants, HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
@@ -107,6 +109,7 @@ export function PlotPanel(props: {
   const [polygonPoints, setPolygonPoints] = useState(0); // mirrors draft.points.length for the Finish/Cancel bar
   const [hingeStep, setHingeStep] = useState(0); // clicks placed for hinged quadrants, for the hint
   const hingeShift = useRef(false);
+  const [typing, setTyping] = useState(false);
   const frameRef = useRef<Frame | null>(null);
   const draft = useRef<Draft>({ points: [] });
   const { mode, systemMode } = useColorScheme();
@@ -406,6 +409,15 @@ export function PlotPanel(props: {
     return onAxes && !(g.kind === "range" ? sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim));
   }).length;
 
+  // Text alternative for the canvas: what is plotted, how many events, and each visible gate's share.
+  const shownCount = parent ? stats.find((s) => s.id === parent)?.count : sample.file.eventCount;
+  const gateText = populations
+    .filter((q) => q.parentId === parent && q.gate.kind !== "boolean" && q.gate.kind !== "clean" &&
+      (q.gate.kind === "range" ? !yDim && sameDim(q.gate.x, xDim) : !!yDim && sameDim(q.gate.x, xDim) && sameDim(q.gate.y, yDim)))
+    .map((q) => `${q.name} ${stats.find((s) => s.id === q.id)?.percentParent.toFixed(1) ?? "?"}%`);
+  const summary = `${histogram ? `Histogram of ${paramLabel(sample, xDim.param)}` : `${PLOT_STYLES.find(([k]) => k === style)?.[1] ?? "Density"} plot of ${paramLabel(sample, xDim.param)} against ${paramLabel(sample, yDim!.param)}`}` +
+    ` for ${parentName}, ${shownCount?.toLocaleString() ?? "?"} events. ` + (gateText.length ? `Gates: ${gateText.join(", ")}.` : "No gates on these axes.");
+
   return (
     <Paper sx={{ p: 2, minWidth: 0 }}>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 2 }}>
@@ -467,6 +479,11 @@ export function PlotPanel(props: {
             );
           })}
         </ToggleButtonGroup>
+        <Tooltip title="Gate from typed values">
+          <IconButton size="small" aria-label="Gate from typed values" onClick={() => setTyping(true)}>
+            <KeyboardOutlined fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Typography variant="caption" sx={{ color: "text.secondary", flex: "1 1 160px" }}>{hint}</Typography>
         {hidden > 0 && (
           <Typography variant="caption" sx={{ color: "text.secondary", flexBasis: "100%" }}>
@@ -486,7 +503,7 @@ export function PlotPanel(props: {
       <Box ref={wrapRef} sx={{ width: "100%" }}>
       <canvas
         ref={canvasRef}
-        aria-label={`${histogram ? "Histogram" : "Density plot"} of ${parentName}`}
+        aria-label={summary}
         role="img"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -496,6 +513,19 @@ export function PlotPanel(props: {
         style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: tool === "none" ? "pan-x pan-y pinch-zoom" : "none", cursor: tool === "none" ? "default" : "crosshair" }}
       />
       </Box>
+      {typing && (
+        <BoundsDialog
+          open
+          x={xDim}
+          y={yDim}
+          label={(n) => paramLabel(sample, n)}
+          onGate={(g) => {
+            setTyping(false);
+            props.onGate(g);
+          }}
+          onClose={() => setTyping(false)}
+        />
+      )}
     </Paper>
   );
 }
