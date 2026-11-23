@@ -1,9 +1,9 @@
 name: Release
 
 # Every push to main is checked by semantic-release. A feat or fix commit since the last tag
-# publishes the next beta (v0.1.0-beta.N) as a GitHub prerelease and redeploys the web app.
-# Other commit types publish nothing. A milestone whose issues are all closed is closed here, after the
-# release, and the desktop apps are built for it (desktop.yml).
+# tags the next beta (v0.1.0-beta.N) and redeploys the web app. Other commit types publish nothing.
+# GitHub release pages are only made for finished milestones: a milestone whose issues are all closed is
+# closed here, and desktop.yml creates the release page for the newest tag and attaches the installers.
 on:
   push:
     branches: [main]
@@ -39,7 +39,7 @@ jobs:
       - id: tag
         run: echo "tag=$(git tag --points-at HEAD --list 'v*' | head -1)" >> "$GITHUB_OUTPUT"
 
-  # Releases made with GITHUB_TOKEN do not trigger other workflows, so call the Pages deploy directly.
+  # Tags pushed with GITHUB_TOKEN do not trigger other workflows, so call the Pages deploy directly.
   pages:
     needs: release
     permissions:
@@ -49,7 +49,7 @@ jobs:
     uses: ./.github/workflows/pages.yml
 
   # GitHub never closes milestones by itself, and a close made with GITHUB_TOKEN would not start desktop.yml,
-  # so close finished milestones here, after the release exists, and build the apps directly.
+  # so close finished milestones here, after the tag exists, and build the apps directly.
   milestones:
     needs: release
     runs-on: ubuntu-latest

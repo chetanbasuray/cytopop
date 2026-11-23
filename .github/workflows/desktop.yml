@@ -1,7 +1,7 @@
 name: Desktop apps
 
 # Builds desktop apps with Pake (Tauri) from the same web build and attaches them to a release.
-# Installers ship once per finished milestone, not with every beta. The Release workflow calls this when it
+# Installers and release pages ship once per finished milestone; betas in between are tags only. The Release workflow calls this when it
 # closes a finished milestone; closing one by hand triggers it too. Run it by hand to build for a chosen tag.
 on:
   milestone:
@@ -40,6 +40,15 @@ jobs:
           git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "No tag $TAG"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building desktop apps for $TAG"
+      - name: Create the release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pick.outputs.tag }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "Release $TAG exists"; exit 0; }
+          # Notes cover every change since the previous release page, i.e. the whole milestone.
+          PREV=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
+          gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --generate-notes ${PREV:+--notes-start-tag "$PREV"}
 
   build:
     needs: tag
