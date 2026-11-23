@@ -34,6 +34,7 @@ import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { ReportDialog } from "./ReportDialog";
+import { GroupsDialog } from "./GroupsDialog";
 import { GridDialog } from "./GridDialog";
 import { ControlsDialog, type ControlPick } from "./ControlsDialog";
 import type { DerivedParameter } from "../core/formula";
@@ -89,6 +90,9 @@ export function App() {
   const [negative, setNegative] = useState("none");
   const [derived, setDerived] = useState<DerivedParameter[]>(stored?.derived ?? []);
   const [deriving, setDeriving] = useState(false);
+  const [groups, setGroups] = useState<Record<string, string>>(stored?.groups ?? {});
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [editingGroups, setEditingGroups] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -98,6 +102,10 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   for (const s of samples) withDerived(s, derived);
+  const groupNames = new Set(Object.values(groups));
+  const filter = groupNames.has(groupFilter) ? groupFilter : "all";
+  const shownSamples = filter === "all" ? samples : samples.filter((s) => groups[s.name] === filter);
+  const groupCol = (s: Sample) => (groupNames.size ? [groups[s.name] ?? ""] : []);
   // Threshold gates sit at a percentile of a control sample, so they move when the control or its gating changes.
   const populations = useMemo(() => {
     if (!rawPopulations.some((p) => p.gate.kind === "range" ? p.gate.threshold : p.gate.kind === "rectangle" && (p.gate.xThreshold || p.gate.yThreshold))) return rawPopulations;
@@ -163,11 +171,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill, derived]);
+  }, [populations, scales, editedSpill, derived, groups]);
 
   useEffect(() => {
     try {
@@ -341,7 +349,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const saveWsp = () => {
@@ -397,6 +405,7 @@ export function App() {
       setScales((s) => ({ ...s, ...t.scales }));
       setEditedSpill(t.spillover);
       setDerived(t.derived ?? []);
+      if (t.groups) setGroups(t.groups);
       setParent(null);
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
@@ -491,13 +500,13 @@ export function App() {
   const exportCsv = () => {
     const rows: (string | number)[][] = [];
     const split = splitKeys(statKeys);
-    for (const s of samples) {
+    for (const s of shownSamples) {
       const data = columns(s, useComp, editedSpill, derived);
       let masks: Map<string, Uint8Array>;
       try {
         masks = evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range));
       } catch (err) {
-        rows.push([s.name, `Error: ${(err as Error).message}`]);
+        rows.push([s.name, ...groupCol(s), `Error: ${(err as Error).message}`]);
         continue;
       }
       const cols = statChannels.map((ch) => data[s.names.indexOf(ch)]);
@@ -506,13 +515,13 @@ export function App() {
       const volumeUl = volumeMicrolitres(s.file.keywords);
       const values = (count: number, percentGrandparent: number, mask?: Uint8Array) =>
         statValues(statKeys, { cols, mask, count, percentGrandparent, volumeUl, negative: neg });
-      rows.push([s.name, "All events", s.file.eventCount, 100, 100, ...values(s.file.eventCount, NaN)]);
+      rows.push([s.name, ...groupCol(s), "All events", s.file.eventCount, 100, 100, ...values(s.file.eventCount, NaN)]);
       for (const p of populationStats(populations, masks, s.file.eventCount)) {
-        rows.push([s.name, p.path, p.count, p.percentParent, p.percentTotal, ...values(p.count, p.percentGrandparent, masks.get(p.id))]);
+        rows.push([s.name, ...groupCol(s), p.path, p.count, p.percentParent, p.percentTotal, ...values(p.count, p.percentGrandparent, masks.get(p.id))]);
       }
     }
     const header = [
-      "Sample", "Population", "Count", "% parent", "% total",
+      "Sample", ...(groupNames.size ? ["Group"] : []), "Population", "Count", "% parent", "% total",
       ...split.population.map((k) => STATS.find((st) => st.key === k)!.label),
       ...statChannels.flatMap((ch) => split.channel.map((k) => `${STATS.find((st) => st.key === k)!.label} ${ch}`)),
     ];
@@ -567,7 +576,29 @@ export function App() {
         onRemove={removeSample}
         onOpen={() => fileInput.current?.click()}
         onLoadDemo={loadDemo}
+        groups={groups}
+        groupFilter={filter}
+        onGroupFilter={(g) => {
+          setGroupFilter(g);
+          // Keep the plotted sample inside the chosen group.
+          const first = samples.find((s) => g === "all" || groups[s.name] === g);
+          if (first && !(g === "all" || groups[samples.find((s) => s.id === active)?.name ?? ""] === g)) setActive(first.id);
+        }}
+        onEditGroups={() => setEditingGroups(true)}
       />
+      {editingGroups && (
+        <GroupsDialog
+          open
+          samples={samples.filter((s) => s.name !== DEMO_NAME).map((s) => s.name)}
+          groups={groups}
+          onApply={(g) => {
+            // Groups of files that are not open (from a loaded workspace) stay as they were.
+            setGroups((cur) => ({ ...Object.fromEntries(Object.entries(cur).filter(([n]) => !samples.some((s) => s.name === n))), ...g }));
+            setEditingGroups(false);
+          }}
+          onClose={() => setEditingGroups(false)}
+        />
+      )}
       <Box
         component="main"
         sx={(t) => ({

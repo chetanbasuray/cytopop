@@ -1,6 +1,7 @@
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
+import LabelOutlined from "@mui/icons-material/LabelOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
-import { Box, Button, Chip, Typography } from "@mui/material";
+import { Box, Button, Chip, MenuItem, TextField, Typography } from "@mui/material";
 import type { Sample } from "./model";
 import { COARSE, MONO } from "./theme";
 
@@ -11,7 +12,24 @@ export function SampleBar(props: {
   onRemove: (id: string) => void;
   onOpen: () => void;
   onLoadDemo: () => void;
+  groups: Record<string, string>;
+  groupFilter: string;
+  onGroupFilter: (g: string) => void;
+  onEditGroups: () => void;
 }) {
+  const distinctGroups = Array.from(new Set(Object.values(props.groups).filter(Boolean))).sort();
+  const hasGroups = distinctGroups.length > 0;
+
+  let filterValue = props.groupFilter;
+  if (filterValue !== "all" && !distinctGroups.includes(filterValue)) {
+    filterValue = "all";
+  }
+
+  const filteredSamples = props.samples.filter((s) => {
+    if (filterValue === "all") return true;
+    return props.groups[s.name] === filterValue;
+  });
+
   return (
     <Box
       component="nav"
@@ -24,10 +42,35 @@ export function SampleBar(props: {
       <Typography variant="h2" sx={{ color: "text.secondary", flex: "none", display: { xs: "none", sm: "block" } }}>
         Samples
       </Typography>
+      {hasGroups && (
+        <TextField
+          select
+          size="small"
+          label="Group"
+          value={filterValue}
+          onChange={(e) => props.onGroupFilter(e.target.value)}
+          sx={{ minWidth: 160, flex: "none" }}
+          slotProps={{ htmlInput: { "aria-label": "Group filter" } }}
+        >
+          <MenuItem value="all">All samples</MenuItem>
+          {distinctGroups.map((g) => (
+            <MenuItem key={g} value={g}>{g}</MenuItem>
+          ))}
+        </TextField>
+      )}
+      <Button
+        startIcon={<LabelOutlined />}
+        onClick={props.onEditGroups}
+        disabled={props.samples.length === 0}
+        sx={{ flex: "none", whiteSpace: "nowrap" }}
+      >
+        Groups
+      </Button>
       <Box sx={{ display: "flex", gap: 1, overflowX: "auto", flex: 1, minWidth: 0, py: 0.5 }}>
-        {props.samples.length > 0 ? (
-          props.samples.map((s) => {
+        {filteredSamples.length > 0 ? (
+          filteredSamples.map((s) => {
             const selected = s.id === props.active;
+            const group = props.groups[s.name];
             return (
               <Chip
                 key={s.id}
@@ -40,6 +83,11 @@ export function SampleBar(props: {
                 label={
                   <>
                     {s.name}
+                    {group && (
+                      <Box component="span" sx={{ fontSize: 12, opacity: 0.7, ml: 1 }}>
+                        {group}
+                      </Box>
+                    )}
                     <Box component="span" sx={{ fontFamily: MONO, fontSize: 12, ml: 1, opacity: 0.8 }}>
                       {s.file.eventCount.toLocaleString()}
                     </Box>
@@ -51,7 +99,7 @@ export function SampleBar(props: {
           })
         ) : (
           <Typography variant="body2" noWrap sx={{ color: "text.secondary" }}>
-            Open or drop .fcs files. They stay on this computer
+            {props.samples.length > 0 && hasGroups ? "No samples in this group" : "Open or drop .fcs files. They stay on this computer"}
           </Typography>
         )}
       </Box>

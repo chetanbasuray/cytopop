@@ -26,13 +26,15 @@ export interface Template {
   spillover?: Spillover; // edited compensation matrix
   samples?: string[]; // file names open when a workspace was saved
   derived?: DerivedParameter[];
+  groups?: Record<string, string>; // sample file name to group name
 }
 
 export function isTemplate(t: unknown): t is Template {
   return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object" &&
     ((t as Template).spillover === undefined || isSpillover((t as Template).spillover)) &&
     ((t as Template).samples === undefined || (Array.isArray((t as Template).samples) && (t as Template).samples!.every((n) => typeof n === "string"))) &&
-    ((t as Template).derived === undefined || (Array.isArray((t as Template).derived) && (t as Template).derived!.every(isDerivedParameter)));
+    ((t as Template).derived === undefined || (Array.isArray((t as Template).derived) && (t as Template).derived!.every(isDerivedParameter))) &&
+    ((t as Template).groups === undefined || (!!(t as Template).groups && typeof (t as Template).groups === "object" && Object.values((t as Template).groups!).every((g) => typeof g === "string")));
 }
 
 /** Sets a sample's parameter names to its file's parameters followed by the derived ones. */
