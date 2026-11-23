@@ -21,6 +21,7 @@ import { runDate } from "../core/lj";
 import { cleaned, compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
 import { useHistory } from "./history";
+import { forgetFile, keepFile, keptFiles, storageMessage } from "./storage";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
@@ -50,7 +51,7 @@ function loadStored(): Template | undefined {
   }
 }
 
-type Toast = { message: string; severity: "error" | "info" };
+type Toast = { message: string; severity: "error" | "warning" | "info" };
 
 export function App() {
   const stored = useMemo(loadStored, []);
@@ -137,11 +138,39 @@ export function App() {
   );
 
   // ---------- samples ----------
-  const addSample = (name: string, file: FcsFile) => {
-    const s: Sample = { id: newId("s"), name, file, names: file.parameters.map((p) => p.name) };
+  const addSample = (name: string, file: FcsFile, bytes?: ArrayBuffer, id = newId("s"), keep = true) => {
+    const s: Sample = { id, name, file, names: file.parameters.map((p) => p.name) };
     setSamples((prev) => [...prev, s]);
     setActive((a) => a ?? s.id);
+    if (keep) keepFile({ id, name, bytes }).catch((err) => setToast({ severity: "warning", message: storageMessage(name, err) }));
   };
+
+  const removeSample = (id: string) => {
+    setSamples((prev) => {
+      const rest = prev.filter((s) => s.id !== id);
+      setActive((a) => (a === id ? (rest[0]?.id ?? null) : a));
+      return rest;
+    });
+    forgetFile(id).catch(() => undefined);
+  };
+
+  // Reopen the samples kept from the last session, once.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    keptFiles()
+      .then((kept) => {
+        for (const k of kept) {
+          try {
+            addSample(k.name, k.bytes ? parseFcs(k.bytes) : demoSample(), k.bytes, k.id, false);
+          } catch {
+            forgetFile(k.id).catch(() => undefined);
+          }
+        }
+      })
+      .catch(() => undefined); // no IndexedDB (private window): start empty
+  }, []);
 
   const loadDemo = () => {
     // The demo is deterministic, so a second click selects the loaded copy instead of adding a duplicate.
@@ -155,10 +184,8 @@ export function App() {
     // shortcut: parses on the main thread; move to a Web Worker if very large files freeze the UI.
     for (const file of Array.from(files)) {
       try {
-        const parsed = parseFcs(await file.arrayBuffer());
-        const s: Sample = { id: newId("s"), name: file.name, file: parsed, names: parsed.parameters.map((p) => p.name) };
-        setSamples((prev) => [...prev, s]);
-        setActive((a) => a ?? s.id);
+        const bytes = await file.arrayBuffer();
+        addSample(file.name, parseFcs(bytes), bytes);
       } catch (err) {
         errors.push(`${file.name}: ${err instanceof FcsError ? err.message : String(err)}`);
       }
@@ -219,17 +246,23 @@ export function App() {
 
   // ---------- templates and export ----------
   const saveTemplate = () =>
-    download("cytopop-template.json", JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}) } satisfies Template, null, 2), "application/json");
+    download("cytopop-workspace.json", JSON.stringify({
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), samples: samples.map((s) => s.name),
+    } satisfies Template, null, 2), "application/json");
 
   const loadTemplate = async (file: File) => {
     try {
       const t: unknown = JSON.parse(await file.text());
-      if (!isTemplate(t)) throw new Error("This file is not a CytoPop gating template");
+      if (!isTemplate(t)) throw new Error("This file is not a CytoPop workspace or gating template");
       setPopulations(t.populations);
       setScales((s) => ({ ...s, ...t.scales }));
       setEditedSpill(t.spillover);
       setParent(null);
-      setToast({ severity: "info", message: `Loaded ${t.populations.length} populations from ${file.name}` });
+      // Gates refer to parameter names, so opening the listed files again relinks them.
+      const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
+      setToast(missing.length
+        ? { severity: "warning", message: `Loaded ${t.populations.length} populations from ${file.name}. Open these files to relink them: ${missing.join(", ")}` }
+        : { severity: "info", message: `Loaded ${t.populations.length} populations from ${file.name}` });
     } catch (err) {
       setToast({ severity: "error", message: (err as Error).message });
     }
@@ -340,6 +373,7 @@ export function App() {
         samples={samples}
         active={active}
         onSelect={setActive}
+        onRemove={removeSample}
         onOpen={() => fileInput.current?.click()}
         onLoadDemo={loadDemo}
       />

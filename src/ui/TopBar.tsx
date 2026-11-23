@@ -105,7 +105,7 @@ export function TopBar(props: {
             }}
           >
             <ListItemIcon><SaveOutlined fontSize="small" /></ListItemIcon>
-            <ListItemText>Save gating template</ListItemText>
+            <ListItemText>Save workspace</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -114,7 +114,7 @@ export function TopBar(props: {
             }}
           >
             <ListItemIcon><FileOpenOutlined fontSize="small" /></ListItemIcon>
-            <ListItemText>Load gating template</ListItemText>
+            <ListItemText>Open workspace</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {

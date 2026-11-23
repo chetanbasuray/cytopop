@@ -8,6 +8,7 @@ export function SampleBar(props: {
   samples: Sample[];
   active: string | null;
   onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
   onOpen: () => void;
   onLoadDemo: () => void;
 }) {
@@ -33,6 +34,7 @@ export function SampleBar(props: {
                 title={s.name}
                 aria-pressed={selected}
                 onClick={() => props.onSelect(s.id)}
+                onDelete={() => props.onRemove(s.id)}
                 color={selected ? "primary" : "default"}
                 variant={selected ? "filled" : "outlined"}
                 label={
