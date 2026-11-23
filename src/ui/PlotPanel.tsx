@@ -7,7 +7,7 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import Straighten from "@mui/icons-material/Straighten";
 import WindowOutlined from "@mui/icons-material/WindowOutlined";
 import {
-  Alert, Box, Button, IconButton, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Checkbox, IconButton, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,7 +18,7 @@ import { ScaleSettings } from "./ScaleSettings";
 import type { Spillover } from "../core/fcs";
 import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { descendants, HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
-import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHighlight, drawHistogram, frame, M, PLOT_STYLES, type Frame, type PlotStyle } from "./plot";
+import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHighlight, drawHistogram, drawOverlay, frame, M, PLOT_STYLES, type Frame, type OverlayLayer, type PlotStyle } from "./plot";
 
 const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["arcsinh", "Arcsinh"]];
 
@@ -41,6 +41,10 @@ export function PlotPanel(props: {
   populations: Population[];
   stats: PopulationStats[];
   parent: string | null;
+  overlayOptions: { key: string; label: string }[];
+  overlayKeys: string[];
+  onOverlayKeys: (keys: string[]) => void;
+  overlayLayers: OverlayLayer[];
   x: string;
   y: string;
   xDim: Dimension;
@@ -75,6 +79,8 @@ export function PlotPanel(props: {
   });
   // Backgating: populations below the one shown can be highlighted in this plot.
   const [highlightPick, setHighlight] = useState("none");
+  const [normalise, setNormalise] = useState(true);
+  const overlaying = yDim === null && props.overlayLayers.length > 0;
   const below = populations.filter((p) => parent === null || (p.id !== parent && descendants(populations, parent).has(p.id)));
   const highlight = below.some((p) => p.id === highlightPick) ? highlightPick : "none";
   const changeStyle = (v: PlotStyle) => {
@@ -132,6 +138,10 @@ export function PlotPanel(props: {
         drawHighlight(f, xs, ys, xt, yt, hl);
       }
       drawAxes(f, xt, yt, paramLabel(sample, xDim.param), paramLabel(sample, yDim.param));
+    } else if (overlaying) {
+      const current = `${sample.name} · ${parent ? (populations.find((p) => p.id === parent)?.name ?? "") : "All events"}`;
+      drawOverlay(f, [{ label: current, xs, mask }, ...props.overlayLayers], xt, normalise);
+      drawAxes(f, xt, null, paramLabel(sample, xDim.param), normalise ? "% of mode" : "Count");
     } else {
       const max = drawHistogram(f, xs, xt, mask);
       const hl = highlight !== "none" ? masks?.get(highlight) : undefined;
@@ -153,7 +163,7 @@ export function PlotPanel(props: {
     if (preview) drawGate(f, preview, "", true);
     // xDim/yDim are rebuilt every render, so compare them by value via their JSON.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, JSON.stringify(xDim), JSON.stringify(yDim)]);
+  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, overlaying, normalise, props.overlayLayers, JSON.stringify(xDim), JSON.stringify(yDim)]);
 
   // The plot is square and follows the panel width, between 320 and 680 CSS px.
   useEffect(() => {
@@ -327,6 +337,30 @@ export function PlotPanel(props: {
         {select("Y axis", props.y, props.onY, [[HIST, "Histogram"], ...params])}
         {select("Y scale", yDim?.scale.kind ?? "linear", (v) => props.onScale(props.y, v as TransformSpec["kind"]), SCALES, histogram)}
         {yDim && settings("Y scale", yDim.scale, props.y)}
+        {yDim === null && props.overlayOptions.length > 0 && (
+          <TextField
+            select
+            size="small"
+            label="Overlay"
+            value={props.overlayKeys.filter((k) => props.overlayOptions.some((o) => o.key === k))}
+            onChange={(e) => props.onOverlayKeys(e.target.value as unknown as string[])}
+            slotProps={{
+              select: { multiple: true, displayEmpty: true, renderValue: (v) => ((v as string[]).length ? `${(v as string[]).length} added` : "None") },
+              inputLabel: { shrink: true },
+            }}
+            sx={{ minWidth: 128 }}
+          >
+            {props.overlayOptions.map((o) => (
+              <MenuItem key={o.key} value={o.key}>
+                <Checkbox size="small" checked={props.overlayKeys.includes(o.key)} sx={{ p: 0, mr: 1 }} />
+                {o.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {overlaying && (
+          <FormControlLabel control={<Switch checked={normalise} onChange={(_, v) => setNormalise(v)} />} label="Normalise to mode" sx={{ ml: 0.5 }} />
+        )}
         {select("Highlight", highlight, setHighlight, [["none", "None"], ...below.map((p): [string, string] => [p.id, p.name])], below.length === 0)}
         {select("Plot", yDim ? style : "histogram", (v) => changeStyle(v as PlotStyle), yDim ? PLOT_STYLES : [["histogram", "Histogram"]], !yDim)}
         <Tooltip title={props.spill ? "Apply the compensation matrix" : "This file has no spillover matrix"}>

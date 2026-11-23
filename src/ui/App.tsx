@@ -73,6 +73,7 @@ export function App() {
   const [cleaning, setCleaning] = useState(false);
   const [tracking, setTracking] = useState(false);
   const [exportingEvents, setExportingEvents] = useState(false);
+  const [overlayKeys, setOverlayKeys] = useState<string[]>([]);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -289,6 +290,37 @@ export function App() {
         return NaN;
       }
     });
+  // Histogram overlays: other samples and populations drawn as extra lines; keys are "sampleId|populationId".
+  const overlayOptions = histogram
+    ? samples.flatMap((s) => [{ id: "all", path: "All events" }, ...populations.map((p) => ({ id: p.id, path: pathOf(populations, p.id) }))]
+        .map((p) => ({ key: `${s.id}|${p.id}`, label: `${s.name} · ${p.path}` })))
+        .filter((o) => o.key !== `${active}|${parent ?? "all"}`)
+    : [];
+  const overlayLayers = useMemo(() => {
+    const masksOf = new Map<string, Map<string, Uint8Array> | undefined>();
+    return overlayKeys.flatMap((key) => {
+      const [sid, pid] = key.split("|");
+      const s = samples.find((q) => q.id === sid);
+      if (!s || !pid) return [];
+      const data = columns(s, useComp, editedSpill);
+      const xs = data[s.names.indexOf(x)];
+      if (!xs) return [];
+      let mask: Uint8Array | undefined;
+      if (pid !== "all") {
+        if (!masksOf.has(s.id)) {
+          try {
+            masksOf.set(s.id, evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range)));
+          } catch {
+            masksOf.set(s.id, undefined);
+          }
+        }
+        mask = masksOf.get(s.id)?.get(pid);
+        if (!mask) return [];
+      }
+      return [{ label: `${s.name} · ${pid === "all" ? "All events" : pathOf(populations, pid)}`, xs, mask }];
+    });
+  }, [overlayKeys, samples, populations, useComp, editedSpill, x]);
+
   const exportEvents = (populationId: string, format: "csv" | "fcs") => {
     if (!sample || !cols) return;
     const mask = populationId === "all" ? undefined : evaluated.masks?.get(populationId);
@@ -436,6 +468,10 @@ export function App() {
             populations={populations}
             stats={stats}
             parent={parent}
+            overlayOptions={overlayOptions}
+            overlayKeys={overlayKeys}
+            onOverlayKeys={setOverlayKeys}
+            overlayLayers={overlayLayers}
             x={x}
             y={y}
             xDim={xDim}

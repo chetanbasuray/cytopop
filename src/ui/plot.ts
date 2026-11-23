@@ -181,6 +181,65 @@ export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: 
   return max;
 }
 
+/** Okabe-Ito colours that read on both light and dark backgrounds (black and the darkest blue left out). */
+export const OVERLAY_COLOURS = ["#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#D55E00", "#999999"];
+
+export interface OverlayLayer {
+  label: string;
+  xs: Float32Array;
+  mask?: Uint8Array;
+}
+
+/** Histogram lines for several samples or populations; normalised layers are each scaled to their own mode. */
+export function drawOverlay(f: Frame, layers: OverlayLayer[], xt: Transform, normalise: boolean): void {
+  const B = 256;
+  const all = layers.map(({ xs, mask }) => {
+    const bins = new Uint32Array(B);
+    const step = drawStep(xs.length);
+    for (let e = 0; e < xs.length; e += step) {
+      if (mask && !mask[e]) continue;
+      const u = xt.forward(xs[e]!);
+      if (u >= 0 && u < 1) bins[Math.floor(u * B)]! += step; // scale skipped events back so raw counts stay comparable
+    }
+    return bins;
+  });
+  const peak = (b: Uint32Array) => b.reduce((m, c) => Math.max(m, c), 1);
+  const shared = Math.max(1, ...all.map(peak));
+  const { ctx } = f;
+  ctx.lineWidth = 1.5;
+  all.forEach((bins, k) => {
+    const max = normalise ? peak(bins) : shared;
+    ctx.strokeStyle = OVERLAY_COLOURS[k % OVERLAY_COLOURS.length]!;
+    ctx.beginPath();
+    bins.forEach((c, i) => {
+      const x = M.left + ((i + 0.5) / B) * f.w, y = M.top + f.h - (c / max) * f.h * 0.95;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+  // Legend in the top-right corner, inside the plot so image exports include it.
+  ctx.font = "11px Roboto, system-ui, sans-serif";
+  ctx.textAlign = "right";
+  const boxW = Math.max(...layers.map((l) => ctx.measureText(l.label).width)) + 38;
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = css("--mui-palette-background-paper");
+  ctx.fillRect(M.left + f.w - boxW - 2, M.top + 4, boxW, layers.length * 16 + 6);
+  ctx.globalAlpha = 1;
+  layers.forEach((l, k) => {
+    const y = M.top + 14 + k * 16, x = M.left + f.w - 8;
+    ctx.fillStyle = css("--mui-palette-text-primary");
+    ctx.fillText(l.label, x - 22, y + 4);
+    ctx.strokeStyle = OVERLAY_COLOURS[k % OVERLAY_COLOURS.length]!;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 16, y);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  });
+  ctx.lineWidth = 1;
+}
+
 const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const sup = (n: number) => String(n).split("").map((d) => SUP[Number(d)]).join("");
 
