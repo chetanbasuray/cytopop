@@ -1,3 +1,4 @@
+import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import Check from "@mui/icons-material/Check";
@@ -59,6 +60,7 @@ export function TopBar(props: {
   onLoadTemplate: (file: File) => void;
   onCheckSettings: () => void;
   onClean: () => void;
+  onTrack: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -131,6 +133,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><CleaningServicesOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Find unstable events</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onTrack();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><TimelineOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Track a statistic across runs</ListItemText>
           </MenuItem>
         </Menu>
         <input

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import type { Dimension, Gate, Quadrant } from "../core/gates";
-import { channelStats, DEFAULT_STATS, evaluate, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
+import { channelStats, DEFAULT_STATS, evaluate, pathOf, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
@@ -16,6 +16,8 @@ import { CombineDialog } from "./CombineDialog";
 import { MatrixDialog } from "./MatrixDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { CleaningDialog } from "./CleaningDialog";
+import { TrackingDialog } from "./TrackingDialog";
+import { runDate } from "../core/lj";
 import { cleaned, compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
@@ -64,6 +66,7 @@ export function App() {
   const [editingMatrix, setEditingMatrix] = useState(false);
   const [checkingSettings, setCheckingSettings] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [tracking, setTracking] = useState(false);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -213,6 +216,23 @@ export function App() {
   };
 
   const cleaningRows = cleaning ? samples.map((s) => ({ name: s.name, report: cleaned(s.names, columns(s, useComp, editedSpill), s.file.parameters.map((q) => q.range)).report })) : [];
+  // Runs in acquisition order; files without $DATE keep their open order after the dated ones.
+  const runs = tracking
+    ? samples.map((s) => ({ s, date: runDate(s.file.keywords) }))
+        .sort((a, b) => (a.date && b.date ? +a.date - +b.date : a.date ? -1 : b.date ? 1 : 0))
+    : [];
+  const trackValues = (populationId: string, channel: string, stat: StatKey) =>
+    runs.map(({ s }) => {
+      const data = columns(s, useComp, editedSpill);
+      const col = data[s.names.indexOf(channel)];
+      if (!col) return NaN;
+      try {
+        const mask = populationId !== "all" ? evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range)).get(populationId) : undefined;
+        return channelStats(col, mask)[stat];
+      } catch {
+        return NaN;
+      }
+    });
   const cleanApplied = populations.some((p) => p.gate.kind === "clean");
   const addStable = () => {
     // Existing top-level gates move under Stable events, so the flagged events drop out of the analysis.
@@ -294,6 +314,7 @@ export function App() {
         onLoadTemplate={loadTemplate}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
+        onTrack={() => setTracking(true)}
       />
       <SampleBar
         samples={samples}
@@ -379,6 +400,18 @@ export function App() {
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
       <CleaningDialog open={cleaning} rows={cleaningRows} applied={cleanApplied} onApply={addStable} onClose={() => setCleaning(false)} />
+      {tracking && (
+        <TrackingDialog
+          open
+          runs={runs.map(({ s, date }) => ({ name: s.name, date }))}
+          populations={[{ id: "all", path: "All events" }, ...populations.map((p) => ({ id: p.id, path: pathOf(populations, p.id) }))]}
+          channels={(sample?.names ?? []).map((n) => ({ name: n, label: paramLabel(sample!, n) }))}
+          compute={trackValues}
+          onExportCsv={(header, rows) => download("cytopop-tracking.csv", toCsv(header, rows), "text/csv")}
+          onExportSvg={(svg) => download("cytopop-tracking.svg", svg, "image/svg+xml")}
+          onClose={() => setTracking(false)}
+        />
+      )}
       <SettingsDialog
         open={checkingSettings}
         sampleNames={samples.map((s) => s.name)}
