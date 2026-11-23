@@ -17,6 +17,8 @@ import { MatrixDialog } from "./MatrixDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { CleaningDialog } from "./CleaningDialog";
 import { TrackingDialog } from "./TrackingDialog";
+import { ExportDialog } from "./ExportDialog";
+import { eventsCsv, eventsFcs, pickedEvents } from "../core/export";
 import { runDate } from "../core/lj";
 import { cleaned, compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
@@ -70,6 +72,7 @@ export function App() {
   const [checkingSettings, setCheckingSettings] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [tracking, setTracking] = useState(false);
+  const [exportingEvents, setExportingEvents] = useState(false);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -286,6 +289,19 @@ export function App() {
         return NaN;
       }
     });
+  const exportEvents = (populationId: string, format: "csv" | "fcs") => {
+    if (!sample || !cols) return;
+    const mask = populationId === "all" ? undefined : evaluated.masks?.get(populationId);
+    if (populationId !== "all" && !mask) return;
+    const events = pickedEvents(sample.file.eventCount, mask);
+    const path = populationId === "all" ? "All events" : pathOf(populations, populationId);
+    const base = `${sample.name.replace(/\.fcs$/i, "")}-${path.replace(/[^\w-]+/g, "_")}`;
+    const compensated = useComp && !!spilloverFor(sample.names, sample.file.spillover, editedSpill);
+    if (format === "csv") download(`${base}.csv`, eventsCsv(sample.names.map((n) => paramLabel(sample, n)), cols, events), "text/csv");
+    else download(`${base}.fcs`, eventsFcs(sample.file, cols, events, compensated, {
+      CYTOPOP_SOURCE: sample.name, CYTOPOP_POPULATION: path, CYTOPOP_COMPENSATED: compensated ? "yes" : "no",
+    }), "application/vnd.isac.fcs");
+  };
   const cleanApplied = populations.some((p) => p.gate.kind === "clean");
   const addStable = () => {
     // Existing top-level gates move under Stable events, so the flagged events drop out of the analysis.
@@ -368,6 +384,7 @@ export function App() {
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
         onTrack={() => setTracking(true)}
+        onExportEvents={() => setExportingEvents(true)}
       />
       <SampleBar
         samples={samples}
@@ -456,6 +473,18 @@ export function App() {
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
       <CleaningDialog open={cleaning} rows={cleaningRows} applied={cleanApplied} onApply={addStable} onClose={() => setCleaning(false)} />
+      {exportingEvents && (
+        <ExportDialog
+          open
+          sampleName={sample?.name}
+          populations={[{ id: "all", path: "All events", count: sample?.file.eventCount ?? 0 },
+            ...stats.map((p) => ({ id: p.id, path: p.path, count: p.count }))]}
+          initial={parent ?? "all"}
+          compensated={useComp && !!sample && !!spilloverFor(sample.names, sample.file.spillover, editedSpill)}
+          onExport={exportEvents}
+          onClose={() => setExportingEvents(false)}
+        />
+      )}
       {tracking && (
         <TrackingDialog
           open

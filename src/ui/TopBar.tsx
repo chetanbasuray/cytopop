@@ -1,3 +1,4 @@
+import IosShareOutlined from "@mui/icons-material/IosShareOutlined";
 import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
@@ -61,6 +62,7 @@ export function TopBar(props: {
   onCheckSettings: () => void;
   onClean: () => void;
   onTrack: () => void;
+  onExportEvents: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -142,6 +144,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><TimelineOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Track a statistic across runs</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onExportEvents();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><IosShareOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Export a population's events</ListItemText>
           </MenuItem>
         </Menu>
         <input
