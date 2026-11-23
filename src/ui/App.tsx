@@ -4,6 +4,7 @@ import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import { percentileOf, splitEdge, withThresholds, type Dimension, type Gate, type Quadrant, type Threshold } from "../core/gates";
 import { fromSpec } from "../core/transforms";
+import { readWsp } from "../core/wsp";
 import { channelStats, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
@@ -31,6 +32,7 @@ import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
+import { ReportDialog } from "./ReportDialog";
 import { GridDialog } from "./GridDialog";
 import { ControlsDialog, type ControlPick } from "./ControlsDialog";
 import type { DerivedParameter } from "../core/formula";
@@ -91,6 +93,7 @@ export function App() {
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   for (const s of samples) withDerived(s, derived);
@@ -340,8 +343,24 @@ export function App() {
       populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
+  const loadWsp = (file: File, xml: string) => {
+    const w = readWsp(xml, samples.map((s) => s.name));
+    setPopulations(w.populations);
+    setScales((s) => ({ ...s, ...w.scales }));
+    setEditedSpill(w.spillover);
+    if (w.compensated) setUseComp(true);
+    setDerived([]);
+    setParent(null);
+    const missing = w.samples.filter((n) => !samples.some((s) => s.name === n));
+    const summary = `Loaded ${w.populations.length} populations from ${file.name}, using the gates of ${w.source}.` +
+      (missing.length ? ` Open these files to analyse them: ${missing.join(", ")}` : "");
+    if (w.report.length) setImportReport({ title: "Workspace imported with changes", summary, lines: w.report });
+    else setToast({ severity: missing.length ? "warning" : "info", message: summary });
+  };
+
   const loadTemplate = async (file: File) => {
     try {
+      if (/\.wsp$/i.test(file.name)) return loadWsp(file, await file.text());
       const t: unknown = JSON.parse(await file.text());
       if (!isTemplate(t)) throw new Error("This file is not a CytoPop workspace or gating template");
       setPopulations(t.populations);
@@ -715,6 +734,7 @@ export function App() {
           setCombining(false);
         }}
       />
+      <ReportDialog report={importReport} onClose={() => setImportReport(null)} />
       <Snackbar
         open={!!toast}
         autoHideDuration={toast?.severity === "error" ? 8000 : 4000}
