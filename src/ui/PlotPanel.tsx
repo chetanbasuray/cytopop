@@ -18,7 +18,7 @@ import { ScaleSettings } from "./ScaleSettings";
 import type { Spillover } from "../core/fcs";
 import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
-import { drawAxes, drawDensity, drawGate, drawHistogram, frame, M, type Frame } from "./plot";
+import { drawAxes, drawContour, drawDensity, drawDots, drawGate, drawHistogram, frame, M, PLOT_STYLES, type Frame, type PlotStyle } from "./plot";
 
 const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["arcsinh", "Arcsinh"]];
 
@@ -65,6 +65,22 @@ export function PlotPanel(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(520);
+  const [style, setStyle] = useState<PlotStyle>(() => {
+    try {
+      const v = localStorage.getItem("cytopop-plot-style");
+      return PLOT_STYLES.some(([k]) => k === v) ? (v as PlotStyle) : "density";
+    } catch {
+      return "density";
+    }
+  });
+  const changeStyle = (v: PlotStyle) => {
+    setStyle(v);
+    try {
+      localStorage.setItem("cytopop-plot-style", v);
+    } catch {
+      /* per-viewer convenience only */
+    }
+  };
   const [polygonPoints, setPolygonPoints] = useState(0); // mirrors draft.points.length for the Finish/Cancel bar
   const frameRef = useRef<Frame | null>(null);
   const draft = useRef<Draft>({ points: [] });
@@ -103,7 +119,9 @@ export function PlotPanel(props: {
       const yt = fromSpec(yDim.scale);
       const ys = cols[sample.names.indexOf(yDim.param)];
       if (!ys) return;
-      drawDensity(f, xs, ys, xt, yt, mask);
+      if (style === "density") drawDensity(f, xs, ys, xt, yt, mask);
+      else if (style === "dot") drawDots(f, xs, ys, xt, yt, mask);
+      else drawContour(f, xs, ys, xt, yt, style, mask);
       drawAxes(f, xt, yt, paramLabel(sample, xDim.param), paramLabel(sample, yDim.param));
     } else {
       drawHistogram(f, xs, xt, mask);
@@ -121,7 +139,7 @@ export function PlotPanel(props: {
     if (preview) drawGate(f, preview, "", true);
     // xDim/yDim are rebuilt every render, so compare them by value via their JSON.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sample, cols, masks, parent, populations, stats, previewGate, size, JSON.stringify(xDim), JSON.stringify(yDim)]);
+  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, JSON.stringify(xDim), JSON.stringify(yDim)]);
 
   // The plot is square and follows the panel width, between 320 and 680 CSS px.
   useEffect(() => {
@@ -295,6 +313,7 @@ export function PlotPanel(props: {
         {select("Y axis", props.y, props.onY, [[HIST, "Histogram"], ...params])}
         {select("Y scale", yDim?.scale.kind ?? "linear", (v) => props.onScale(props.y, v as TransformSpec["kind"]), SCALES, histogram)}
         {yDim && settings("Y scale", yDim.scale, props.y)}
+        {select("Plot", yDim ? style : "histogram", (v) => changeStyle(v as PlotStyle), yDim ? PLOT_STYLES : [["histogram", "Histogram"]], !yDim)}
         <Tooltip title={props.spill ? "Apply the compensation matrix" : "This file has no spillover matrix"}>
           <FormControlLabel
             sx={{ ml: 0.5 }}
