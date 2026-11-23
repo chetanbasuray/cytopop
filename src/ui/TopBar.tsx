@@ -3,6 +3,7 @@ import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import FunctionsOutlined from "@mui/icons-material/FunctionsOutlined";
+import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -65,6 +66,8 @@ export function TopBar(props: {
   onTrack: () => void;
   onExportEvents: () => void;
   onDerive: () => void;
+  onGrid: () => void;
+  canGrid: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -164,6 +167,16 @@ export function TopBar(props: {
           >
             <ListItemIcon><FunctionsOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Derived parameters</ListItemText>
+          </MenuItem>
+          <MenuItem
+            disabled={!props.canGrid}
+            onClick={() => {
+              props.onGrid();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><GridViewOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>All parameter pairs</ListItemText>
           </MenuItem>
         </Menu>
         <input

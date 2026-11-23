@@ -70,6 +70,33 @@ export function drawDensity(f: Frame, xs: Float32Array, ys: Float32Array, xt: Tr
   f.ctx.drawImage(off, M.left, M.top, f.w, f.h);
 }
 
+/** Display units (0..1) of every `step`-th event, NaN where the mask leaves an event out. Used by the all-pairs grid. */
+export function units(xs: Float32Array, t: Transform, mask: Uint8Array | undefined, step: number): Float32Array {
+  const out = new Float32Array(Math.ceil(xs.length / step));
+  for (let e = 0, k = 0; e < xs.length; e += step, k++) out[k] = mask && !mask[e] ? NaN : t.forward(xs[e]!);
+  return out;
+}
+
+/** A G-by-G density image of paired display units, with the same colour ramp as the main plot. */
+export function pairImage(us: Float32Array, vs: Float32Array, G: number): ImageData {
+  const bins = new Uint32Array(G * G);
+  let max = 0;
+  for (let k = 0; k < us.length; k++) {
+    const u = us[k]!, v = vs[k]!;
+    if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) continue; // also drops NaN
+    const c = ++bins[Math.floor((1 - v) * G) * G + Math.floor(u * G)]!;
+    if (c > max) max = c;
+  }
+  const img = new ImageData(G, G);
+  const logMax = Math.log1p(max);
+  for (let k = 0; k < bins.length; k++) {
+    if (!bins[k]) continue;
+    const [r, g, b] = ramp(Math.log1p(bins[k]!) / logMax);
+    img.data.set([r, g, b, 255], k * 4);
+  }
+  return img;
+}
+
 export type PlotStyle = "density" | "dot" | "contour5" | "contour10" | "contour2" | "contourLog";
 export const PLOT_STYLES: [PlotStyle, string][] = [
   ["density", "Density"], ["dot", "Dots"], ["contour5", "Contour 5%"], ["contour10", "Contour 10%"],
