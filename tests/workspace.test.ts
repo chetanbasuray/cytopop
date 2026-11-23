@@ -12,3 +12,11 @@ test("workspaces may carry sample groups as file name to group name", () => {
   expect(isTemplate({ populations: [], scales: {}, groups: { "a.fcs": "Controls" } })).toBe(true);
   expect(isTemplate({ populations: [], scales: {}, groups: { "a.fcs": 3 } })).toBe(false);
 });
+
+test("workspaces may carry keyword columns and annotation columns", () => {
+  const annotations = { columns: ["Donor", "Day"], values: { "a.fcs": { Donor: "D1", Day: "3" } } };
+  expect(isTemplate({ populations: [], scales: {}, keywordColumns: ["$WELLID"], annotations })).toBe(true);
+  expect(isTemplate({ populations: [], scales: {}, keywordColumns: "$WELLID" })).toBe(false);
+  expect(isTemplate({ populations: [], scales: {}, annotations: { columns: ["Donor"], values: { "a.fcs": { Donor: 1 } } } })).toBe(false);
+  expect(isTemplate({ populations: [], scales: {}, annotations: { values: {} } })).toBe(false);
+});

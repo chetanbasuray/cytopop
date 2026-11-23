@@ -1,5 +1,6 @@
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
 import LabelOutlined from "@mui/icons-material/LabelOutlined";
+import TableChartOutlined from "@mui/icons-material/TableChartOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import { Box, Button, Chip, MenuItem, TextField, Typography } from "@mui/material";
 import type { Sample } from "./model";
@@ -16,6 +17,8 @@ export function SampleBar(props: {
   groupFilter: string;
   onGroupFilter: (g: string) => void;
   onEditGroups: () => void;
+  details: (s: Sample) => string; // chosen keyword and annotation values, shown after the name
+  onEditMetadata: () => void;
 }) {
   const distinctGroups = Array.from(new Set(Object.values(props.groups).filter(Boolean))).sort();
   const hasGroups = distinctGroups.length > 0;
@@ -66,15 +69,24 @@ export function SampleBar(props: {
       >
         Groups
       </Button>
+      <Button
+        startIcon={<TableChartOutlined />}
+        onClick={props.onEditMetadata}
+        disabled={props.samples.length === 0}
+        sx={{ flex: "none", whiteSpace: "nowrap" }}
+      >
+        Metadata
+      </Button>
       <Box sx={{ display: "flex", gap: 1, overflowX: "auto", flex: 1, minWidth: 0, py: 0.5 }}>
         {filteredSamples.length > 0 ? (
           filteredSamples.map((s) => {
             const selected = s.id === props.active;
             const group = props.groups[s.name];
+            const details = props.details(s);
             return (
               <Chip
                 key={s.id}
-                title={s.name}
+                title={details ? `${s.name} · ${details}` : s.name}
                 aria-pressed={selected}
                 onClick={() => props.onSelect(s.id)}
                 onDelete={() => props.onRemove(s.id)}
@@ -86,6 +98,11 @@ export function SampleBar(props: {
                     {group && (
                       <Box component="span" sx={{ fontSize: 12, opacity: 0.7, ml: 1 }}>
                         {group}
+                      </Box>
+                    )}
+                    {details && (
+                      <Box component="span" sx={{ fontSize: 12, opacity: 0.7, ml: 1 }}>
+                        {details}
                       </Box>
                     )}
                     <Box component="span" sx={{ fontFamily: MONO, fontSize: 12, ml: 1, opacity: 0.8 }}>

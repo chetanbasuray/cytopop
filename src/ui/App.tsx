@@ -10,7 +10,7 @@ import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, evaluate, 
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
-  type Sample, type Template, type Tool,
+  type Annotations, type Sample, type Template, type Tool,
   rangeScale, withDerived,
 } from "./model";
 import { Footer } from "./Footer";
@@ -35,6 +35,7 @@ import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { ReportDialog } from "./ReportDialog";
 import { GroupsDialog } from "./GroupsDialog";
+import { MetadataDialog } from "./MetadataDialog";
 import { GridDialog } from "./GridDialog";
 import { ControlsDialog, type ControlPick } from "./ControlsDialog";
 import type { DerivedParameter } from "../core/formula";
@@ -93,6 +94,9 @@ export function App() {
   const [groups, setGroups] = useState<Record<string, string>>(stored?.groups ?? {});
   const [groupFilter, setGroupFilter] = useState("all");
   const [editingGroups, setEditingGroups] = useState(false);
+  const [keywordCols, setKeywordCols] = useState<string[]>(stored?.keywordColumns ?? []);
+  const [annotations, setAnnotations] = useState<Annotations>(stored?.annotations ?? { columns: [], values: {} });
+  const [editingMeta, setEditingMeta] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -105,7 +109,13 @@ export function App() {
   const groupNames = new Set(Object.values(groups));
   const filter = groupNames.has(groupFilter) ? groupFilter : "all";
   const shownSamples = filter === "all" ? samples : samples.filter((s) => groups[s.name] === filter);
-  const groupCol = (s: Sample) => (groupNames.size ? [groups[s.name] ?? ""] : []);
+  const groupCol = (s: Sample) => [
+    ...(groupNames.size ? [groups[s.name] ?? ""] : []),
+    ...keywordCols.map((k) => s.file.keywords[k] ?? ""),
+    ...annotations.columns.map((c) => annotations.values[s.name]?.[c] ?? ""),
+  ];
+  const metaHeader = [...(groupNames.size ? ["Group"] : []), ...keywordCols, ...annotations.columns];
+  const details = (s: Sample) => groupCol(s).slice(groupNames.size ? 1 : 0).filter(Boolean).join(" · ");
   // Threshold gates sit at a percentile of a control sample, so they move when the control or its gating changes.
   const populations = useMemo(() => {
     if (!rawPopulations.some((p) => p.gate.kind === "range" ? p.gate.threshold : p.gate.kind === "rectangle" && (p.gate.xThreshold || p.gate.yThreshold))) return rawPopulations;
@@ -171,11 +181,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill, derived, groups]);
+  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations]);
 
   useEffect(() => {
     try {
@@ -349,7 +359,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const saveWsp = () => {
@@ -406,6 +416,8 @@ export function App() {
       setEditedSpill(t.spillover);
       setDerived(t.derived ?? []);
       if (t.groups) setGroups(t.groups);
+      if (t.keywordColumns) setKeywordCols(t.keywordColumns);
+      if (t.annotations) setAnnotations(t.annotations);
       setParent(null);
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
@@ -521,7 +533,7 @@ export function App() {
       }
     }
     const header = [
-      "Sample", ...(groupNames.size ? ["Group"] : []), "Population", "Count", "% parent", "% total",
+      "Sample", ...metaHeader, "Population", "Count", "% parent", "% total",
       ...split.population.map((k) => STATS.find((st) => st.key === k)!.label),
       ...statChannels.flatMap((ch) => split.channel.map((k) => `${STATS.find((st) => st.key === k)!.label} ${ch}`)),
     ];
@@ -585,7 +597,22 @@ export function App() {
           if (first && !(g === "all" || groups[samples.find((s) => s.id === active)?.name ?? ""] === g)) setActive(first.id);
         }}
         onEditGroups={() => setEditingGroups(true)}
+        details={details}
+        onEditMetadata={() => setEditingMeta(true)}
       />
+      {editingMeta && (
+        <MetadataDialog
+          samples={samples.filter((s) => s.name !== DEMO_NAME).map((s) => ({ name: s.name, keywords: s.file.keywords }))}
+          keywordColumns={keywordCols}
+          annotations={annotations}
+          onApply={(k, a) => {
+            setKeywordCols(k);
+            setAnnotations(a);
+            setEditingMeta(false);
+          }}
+          onClose={() => setEditingMeta(false)}
+        />
+      )}
       {editingGroups && (
         <GroupsDialog
           open
