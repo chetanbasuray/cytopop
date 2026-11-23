@@ -1,11 +1,16 @@
 name: Desktop apps
 
 # Builds desktop apps with Pake (Tauri) from the same web build and attaches them to a release.
-# Installers ship once per finished milestone, not with every beta: closing a milestone builds them for
-# the newest release tag. Run it by hand to build for a chosen tag.
+# Installers ship once per finished milestone, not with every beta. The Release workflow calls this when it
+# closes a finished milestone; closing one by hand triggers it too. Run it by hand to build for a chosen tag.
 on:
   milestone:
     types: [closed]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: false
   workflow_dispatch:
     inputs:
       tag:

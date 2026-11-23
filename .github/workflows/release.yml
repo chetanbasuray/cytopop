@@ -2,7 +2,8 @@ name: Release
 
 # Every push to main is checked by semantic-release. A feat or fix commit since the last tag
 # publishes the next beta (v0.1.0-beta.N) as a GitHub prerelease and redeploys the web app.
-# Other commit types publish nothing. Desktop apps are built when a milestone closes (desktop.yml).
+# Other commit types publish nothing. A milestone whose issues are all closed is closed here, after the
+# release, and the desktop apps are built for it (desktop.yml).
 on:
   push:
     branches: [main]
@@ -46,3 +47,37 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/pages.yml
+
+  # GitHub never closes milestones by itself, and a close made with GITHUB_TOKEN would not start desktop.yml,
+  # so close finished milestones here, after the release exists, and build the apps directly.
+  milestones:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    outputs:
+      closed: ${{ steps.close.outputs.closed }}
+    steps:
+      - id: close
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # The Feedback milestone is rolling and stays open.
+          done=$(gh api "repos/$REPO/milestones?state=open" --paginate \
+            --jq '.[] | select(.open_issues == 0 and .closed_issues > 0 and .title != "Feedback") | "\(.number)\t\(.title)"')
+          closed=""
+          while IFS=$'\t' read -r number title; do
+            [ -z "$number" ] && continue
+            gh api -X PATCH "repos/$REPO/milestones/$number" -f state=closed >/dev/null
+            echo "Closed milestone: $title"
+            closed="${closed:+$closed, }$title"
+          done <<< "$done"
+          echo "closed=$closed" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    needs: [release, milestones]
+    if: needs.milestones.outputs.closed != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
