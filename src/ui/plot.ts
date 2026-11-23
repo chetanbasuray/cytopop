@@ -89,7 +89,7 @@ function plotted(xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transfor
 }
 
 /** One pixel per event in the theme's text colour; `keep` filters events (contour outliers). */
-function dots(f: Frame, us: number[], vs: number[], keep: (k: number) => boolean = () => true, alpha = 1): void {
+function dots(f: Frame, us: number[], vs: number[], keep: (k: number) => boolean = () => true, alpha = 1, color = "--mui-palette-text-primary"): void {
   const dpr = window.devicePixelRatio || 1;
   const W = Math.max(1, Math.round(f.w * dpr)), H = Math.max(1, Math.round(f.h * dpr));
   const img = new ImageData(W, H);
@@ -103,11 +103,25 @@ function dots(f: Frame, us: number[], vs: number[], keep: (k: number) => boolean
   o.putImageData(img, 0, 0);
   // Tint the opaque pixels with the text colour, so dots follow the light and dark theme.
   o.globalCompositeOperation = "source-in";
-  o.fillStyle = css("--mui-palette-text-primary");
+  o.fillStyle = css(color);
   o.fillRect(0, 0, W, H);
   f.ctx.globalAlpha = alpha;
   f.ctx.drawImage(off, M.left, M.top, f.w, f.h);
   f.ctx.globalAlpha = 1;
+}
+
+/** Fades what is drawn so far, so a highlighted population stands out. */
+export function dim(f: Frame): void {
+  f.ctx.globalAlpha = 0.65;
+  f.ctx.fillStyle = css("--mui-palette-background-paper");
+  f.ctx.fillRect(M.left, M.top, f.w, f.h);
+  f.ctx.globalAlpha = 1;
+}
+
+/** Backgating: a population's events in the highlight colour, over a plot already dimmed by the caller. */
+export function drawHighlight(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask: Uint8Array): void {
+  const { us, vs } = plotted(xs, ys, xt, yt, mask);
+  dots(f, us, vs, undefined, 1, "--mui-palette-highlight-main");
 }
 
 export function drawDots(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask?: Uint8Array): void {
@@ -140,7 +154,8 @@ export function drawContour(f: Frame, xs: Float32Array, ys: Float32Array, xt: Tr
   ctx.stroke();
 }
 
-export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: Uint8Array): void {
+/** Returns the tallest bin, so a highlighted subset can be drawn on the same scale (`opts.max`). */
+export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: Uint8Array, opts: { max?: number; color?: string } = {}): number {
   const B = 256;
   const bins = new Uint32Array(B);
   const step = drawStep(xs.length);
@@ -149,20 +164,21 @@ export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: 
     const u = xt.forward(xs[e]!);
     if (u >= 0 && u < 1) bins[Math.floor(u * B)]!++;
   }
-  const max = Math.max(1, ...bins);
+  const max = opts.max ?? Math.max(1, ...bins);
   const { ctx } = f;
   ctx.beginPath();
   ctx.moveTo(M.left, M.top + f.h);
   bins.forEach((c, i) => ctx.lineTo(M.left + (i / B) * f.w, M.top + f.h - (c / max) * f.h * 0.95));
   ctx.lineTo(M.left + f.w, M.top + f.h);
   ctx.closePath();
-  const accent = css("--mui-palette-primary-main");
+  const accent = css(opts.color ?? "--mui-palette-primary-main");
   ctx.fillStyle = accent;
   ctx.strokeStyle = accent;
   ctx.globalAlpha = 0.3;
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.stroke();
+  return max;
 }
 
 const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";

@@ -3,9 +3,11 @@ import { createTheme } from "@mui/material/styles";
 declare module "@mui/material/styles" {
   interface Palette {
     gate: Palette["primary"];
+    highlight: Palette["primary"];
   }
   interface PaletteOptions {
     gate?: PaletteOptions["primary"];
+    highlight?: PaletteOptions["primary"];
   }
 }
 
@@ -22,6 +24,7 @@ export const theme = createTheme({
       palette: {
         primary: { main: "#00696d", contrastText: "#ffffff" },
         gate: { main: "#c2185b", contrastText: "#ffffff" },
+        highlight: { main: "#d84315", contrastText: "#ffffff" }, // backgating, distinct from the gate colour
         background: { default: "#f5f7f8", paper: "#ffffff" },
         divider: "rgba(23, 29, 31, 0.10)",
         text: { primary: "#171d1f", secondary: "#4a5457", disabled: "#8a9497" },
@@ -31,6 +34,7 @@ export const theme = createTheme({
       palette: {
         primary: { main: "#7fd3d6", contrastText: "#00373a" },
         gate: { main: "#ff7aa8", contrastText: "#3e0019" },
+        highlight: { main: "#ffab40", contrastText: "#3e2000" },
         background: { default: "#0f1213", paper: "#171b1c" },
         divider: "rgba(222, 228, 229, 0.10)",
         text: { primary: "#dee4e5", secondary: "#a3adb0", disabled: "#6b7578" },

@@ -17,8 +17,8 @@ import { fromSpec, type TransformSpec } from "../core/transforms";
 import { ScaleSettings } from "./ScaleSettings";
 import type { Spillover } from "../core/fcs";
 import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
-import { HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
-import { drawAxes, drawContour, drawDensity, drawDots, drawGate, drawHistogram, frame, M, PLOT_STYLES, type Frame, type PlotStyle } from "./plot";
+import { descendants, HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
+import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHighlight, drawHistogram, frame, M, PLOT_STYLES, type Frame, type PlotStyle } from "./plot";
 
 const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["arcsinh", "Arcsinh"]];
 
@@ -73,6 +73,10 @@ export function PlotPanel(props: {
       return "density";
     }
   });
+  // Backgating: populations below the one shown can be highlighted in this plot.
+  const [highlightPick, setHighlight] = useState("none");
+  const below = populations.filter((p) => parent === null || (p.id !== parent && descendants(populations, parent).has(p.id)));
+  const highlight = below.some((p) => p.id === highlightPick) ? highlightPick : "none";
   const changeStyle = (v: PlotStyle) => {
     setStyle(v);
     try {
@@ -122,9 +126,19 @@ export function PlotPanel(props: {
       if (style === "density") drawDensity(f, xs, ys, xt, yt, mask);
       else if (style === "dot") drawDots(f, xs, ys, xt, yt, mask);
       else drawContour(f, xs, ys, xt, yt, style, mask);
+      const hl = highlight !== "none" ? masks?.get(highlight) : undefined;
+      if (hl) {
+        dim(f);
+        drawHighlight(f, xs, ys, xt, yt, hl);
+      }
       drawAxes(f, xt, yt, paramLabel(sample, xDim.param), paramLabel(sample, yDim.param));
     } else {
-      drawHistogram(f, xs, xt, mask);
+      const max = drawHistogram(f, xs, xt, mask);
+      const hl = highlight !== "none" ? masks?.get(highlight) : undefined;
+      if (hl) {
+        dim(f);
+        drawHistogram(f, xs, xt, hl, { max, color: "--mui-palette-highlight-main" });
+      }
       drawAxes(f, xt, null, paramLabel(sample, xDim.param), "Count");
     }
     for (const p of populations.filter((q) => q.parentId === parent)) {
@@ -139,7 +153,7 @@ export function PlotPanel(props: {
     if (preview) drawGate(f, preview, "", true);
     // xDim/yDim are rebuilt every render, so compare them by value via their JSON.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, JSON.stringify(xDim), JSON.stringify(yDim)]);
+  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, JSON.stringify(xDim), JSON.stringify(yDim)]);
 
   // The plot is square and follows the panel width, between 320 and 680 CSS px.
   useEffect(() => {
@@ -313,6 +327,7 @@ export function PlotPanel(props: {
         {select("Y axis", props.y, props.onY, [[HIST, "Histogram"], ...params])}
         {select("Y scale", yDim?.scale.kind ?? "linear", (v) => props.onScale(props.y, v as TransformSpec["kind"]), SCALES, histogram)}
         {yDim && settings("Y scale", yDim.scale, props.y)}
+        {select("Highlight", highlight, setHighlight, [["none", "None"], ...below.map((p): [string, string] => [p.id, p.name])], below.length === 0)}
         {select("Plot", yDim ? style : "histogram", (v) => changeStyle(v as PlotStyle), yDim ? PLOT_STYLES : [["histogram", "Histogram"]], !yDim)}
         <Tooltip title={props.spill ? "Apply the compensation matrix" : "This file has no spillover matrix"}>
           <FormControlLabel
