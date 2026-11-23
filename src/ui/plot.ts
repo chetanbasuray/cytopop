@@ -36,11 +36,17 @@ function ramp(t: number): [number, number, number] {
   return [a[0]! + (b[0]! - a[0]!) * f, a[1]! + (b[1]! - a[1]!) * f, a[2]! + (b[2]! - a[2]!) * f];
 }
 
+// Plots draw at most this many events, evenly spaced through the file; gates and statistics always use every event.
+// A million points already fill a 220×220 density grid, and transforming more makes large files freeze the page.
+const DRAW_LIMIT = 1_000_000;
+const drawStep = (n: number) => Math.max(1, Math.ceil(n / DRAW_LIMIT));
+
 export function drawDensity(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask?: Uint8Array): void {
   const G = 220;
   const bins = new Uint32Array(G * G);
   let max = 0;
-  for (let e = 0; e < xs.length; e++) {
+  const step = drawStep(xs.length);
+  for (let e = 0; e < xs.length; e += step) {
     if (mask && !mask[e]) continue;
     const u = xt.forward(xs[e]!);
     const v = yt.forward(ys[e]!);
@@ -66,7 +72,8 @@ export function drawDensity(f: Frame, xs: Float32Array, ys: Float32Array, xt: Tr
 export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: Uint8Array): void {
   const B = 256;
   const bins = new Uint32Array(B);
-  for (let e = 0; e < xs.length; e++) {
+  const step = drawStep(xs.length);
+  for (let e = 0; e < xs.length; e += step) {
     if (mask && !mask[e]) continue;
     const u = xt.forward(xs[e]!);
     if (u >= 0 && u < 1) bins[Math.floor(u * B)]!++;
