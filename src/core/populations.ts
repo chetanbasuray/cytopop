@@ -83,7 +83,7 @@ export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelSt
     };
   }
   const sorted = picked.slice(0, n);
-  sorted.sort((a, b) => a - b);
+  sorted.sort(); // typed arrays sort numerically; a comparator is several times slower
 
   const mean = sorted.reduce((a, b) => a + b, 0) / n;
   const mid = n >> 1;
