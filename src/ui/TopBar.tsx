@@ -194,7 +194,7 @@ export function TopBar(props: {
         <input
           ref={templateInput}
           type="file"
-          accept=".json"
+          accept=".json,.wsp"
           hidden
           onChange={(e) => {
             const input = e.currentTarget;
