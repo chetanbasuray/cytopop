@@ -84,7 +84,7 @@ export function descendants(populations: Population[], id: string): Set<string> 
 let nextId = Date.now();
 export const newId = (prefix = "p") => `${prefix}${(nextId++).toString(36)}`;
 
-export function download(name: string, text: string, type: string): void {
+export function download(name: string, text: BlobPart, type: string): void {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
   a.click();
