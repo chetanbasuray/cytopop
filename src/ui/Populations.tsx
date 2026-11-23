@@ -1,12 +1,18 @@
+import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutlineOutlined";
 import Redo from "@mui/icons-material/RedoOutlined";
 import Undo from "@mui/icons-material/UndoOutlined";
 import { Box, Button, IconButton, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
 import type { Population, PopulationStats } from "../core/populations";
+import { splitEdge } from "../core/gates";
+import { thresholdText } from "./ThresholdDialog";
 import { MONO } from "./theme";
 
 const rowSx = { borderRadius: 2, minHeight: 36, py: 0.5, px: 1.5 } as const;
 const countSx = { fontFamily: MONO, fontSize: 12, color: "text.secondary", fontVariantNumeric: "tabular-nums" } as const;
+
+const canThreshold = (p: Population) =>
+  p.gate.kind === "range" || (p.gate.kind === "rectangle" && !!splitEdge(p.gate.xMin, p.gate.xMax) && !!splitEdge(p.gate.yMin, p.gate.yMax));
 
 export function Populations(props: {
   populations: Population[];
@@ -15,6 +21,7 @@ export function Populations(props: {
   parent: string | null;
   onSelectPopulation: (id: string | null) => void;
   onRemovePopulation: (id: string) => void;
+  onThreshold: (id: string) => void;
   onCombine: () => void;
   onUndo?: () => void; // undefined when there is nothing to undo
   onRedo?: () => void;
@@ -23,6 +30,7 @@ export function Populations(props: {
 
   const node = (id: string | null, name: string, figure: string, depth: number): React.ReactNode => {
     const kids = populations.filter((p) => p.parentId === id);
+    const pop = id ? populations.find((p) => p.id === id) : undefined;
     return (
       <Box component="li" key={id ?? "all"} sx={{ listStyle: "none", minWidth: 0 }}>
         <Box sx={{ display: "flex", alignItems: "center", "&:hover .del, & .del:focus-visible": { opacity: 1 } }}>
@@ -30,12 +38,30 @@ export function Populations(props: {
             selected={props.parent === id}
             onClick={() => props.onSelectPopulation(id)}
             sx={{ ...rowSx, pl: 1.5 + depth * 2, gap: 1, minWidth: 0 }}
-            title={name}
+            title={[name, pop && thresholdText(pop.gate)].filter(Boolean).join(" · ")}
           >
             {id && <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: 0.5, border: 2, borderColor: "gate.main", flex: "none" }} />}
-            <ListItemText primary={name} slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } } }} sx={{ my: 0, minWidth: 0 }} />
+            <ListItemText
+              primary={name}
+              secondary={pop ? thresholdText(pop.gate) || undefined : undefined}
+              slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } }, secondary: { noWrap: true, sx: { fontSize: 12 } } }}
+              sx={{ my: 0, minWidth: 0 }}
+            />
             <Typography component="span" sx={countSx}>{figure}</Typography>
           </ListItemButton>
+          {pop && canThreshold(pop) && (
+            <Tooltip title="Threshold from a control">
+              <IconButton
+                className="del"
+                size="small"
+                aria-label={`Set ${name} from a control`}
+                onClick={() => props.onThreshold(pop.id)}
+                sx={{ ml: 0.5, transition: "opacity 120ms", "@media (hover: hover) and (pointer: fine)": { opacity: 0 } }}
+              >
+                <PercentOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           {id && (
             <Tooltip title="Delete population and its children">
               <IconButton

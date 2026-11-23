@@ -2,7 +2,8 @@ import { Alert, Box, Snackbar } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
-import type { Dimension, Gate, Quadrant } from "../core/gates";
+import { percentileOf, splitEdge, withThresholds, type Dimension, type Gate, type Quadrant, type Threshold } from "../core/gates";
+import { fromSpec } from "../core/transforms";
 import { channelStats, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
@@ -29,6 +30,7 @@ import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
+import { ThresholdDialog } from "./ThresholdDialog";
 import type { DerivedParameter } from "../core/formula";
 import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
@@ -63,7 +65,7 @@ export function App() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const history = useHistory<Population[]>(stored?.populations ?? []);
-  const populations = history.value, setPopulations = history.set;
+  const rawPopulations = history.value, setPopulations = history.set;
   const [scales, setScales] = useState<Record<string, TransformSpec>>(stored?.scales ?? {});
   const [parent, setParent] = useState<string | null>(null);
   const [xRaw, setX] = useState("");
@@ -88,6 +90,34 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   for (const s of samples) withDerived(s, derived);
+  // Threshold gates sit at a percentile of a control sample, so they move when the control or its gating changes.
+  const populations = useMemo(() => {
+    if (!rawPopulations.some((p) => p.gate.kind === "range" ? p.gate.threshold : p.gate.kind === "rectangle" && (p.gate.xThreshold || p.gate.yThreshold))) return rawPopulations;
+    const masks = new Map<string, Map<string, Uint8Array> | null>();
+    const resolve = (t: Threshold, dim: Dimension) => {
+      const s = samples.find((q) => q.name === t.sample);
+      if (!s) return undefined;
+      const data = columns(s, useComp, editedSpill, derived);
+      const col = data[s.names.indexOf(dim.param)];
+      if (!col) return undefined;
+      if (!masks.has(s.id)) {
+        try {
+          masks.set(s.id, evaluate(rawPopulations, s.names, data, s.file.parameters.map((q) => q.range)));
+        } catch {
+          masks.set(s.id, null);
+        }
+      }
+      const mask = t.population === "all" ? undefined : masks.get(s.id)?.get(t.population);
+      if (t.population !== "all" && !mask) return undefined;
+      return fromSpec(dim.scale).forward(percentileOf(col, mask, t.percentile));
+    };
+    return rawPopulations.map((p) => {
+      if (p.gate.kind !== "range" && p.gate.kind !== "rectangle") return p;
+      const gate = withThresholds(p.gate, resolve);
+      return gate === p.gate ? p : { ...p, gate };
+    });
+  }, [rawPopulations, samples, useComp, editedSpill, derived]);
+  const [thresholding, setThresholding] = useState<string | null>(null);
   const sample = samples.find((s) => s.id === active);
   const names = sample?.names ?? [];
   const x = names.includes(xRaw) ? xRaw : (names.find((n) => /^FSC-A/i.test(n)) ?? names[0] ?? "");
@@ -245,6 +275,28 @@ export function App() {
     }
     pinScales();
     setNaming(null);
+  };
+
+  /** Sets or clears (t undefined) a population's threshold; for quadrants, every quadrant sharing that split moves together. */
+  const setThreshold = (id: string, t: Threshold | undefined, axes: ("x" | "y")[]) => {
+    setPopulations((all) => {
+      const target = all.find((p) => p.id === id);
+      if (!target) return all;
+      const tg = target.gate;
+      if (tg.kind === "range") return all.map((p) => (p.id === id && p.gate.kind === "range" ? { ...p, gate: { ...p.gate, threshold: t } } : p));
+      if (tg.kind !== "rectangle") return all;
+      const split = (g: Extract<Gate, { kind: "rectangle" }>, axis: "x" | "y") => {
+        const e = axis === "x" ? splitEdge(g.xMin, g.xMax) : splitEdge(g.yMin, g.yMax);
+        return e && g[`${axis}${e === "min" ? "Min" : "Max"}`];
+      };
+      return all.map((p) => {
+        const g = p.gate;
+        if (g.kind !== "rectangle" || p.parentId !== target.parentId || g.x.param !== tg.x.param || g.y.param !== tg.y.param) return p;
+        let next = g;
+        for (const axis of axes) if (split(g, axis) !== undefined && split(g, axis) === split(tg, axis)) next = { ...next, [`${axis}Threshold`]: t };
+        return next === g ? p : { ...p, gate: next };
+      });
+    });
   };
 
   const removePopulation = (id: string) => {
@@ -469,6 +521,7 @@ export function App() {
             parent={parent}
             onSelectPopulation={setParent}
             onRemovePopulation={removePopulation}
+            onThreshold={setThresholding}
             onCombine={() => setCombining(true)}
             onUndo={history.canUndo ? history.undo : undefined}
             onRedo={history.canRedo ? history.redo : undefined}
@@ -527,6 +580,20 @@ export function App() {
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
       <CleaningDialog open={cleaning} rows={cleaningRows} applied={cleanApplied} onApply={addStable} onClose={() => setCleaning(false)} />
+      {thresholding && (
+        <ThresholdDialog
+          open
+          population={populations.find((p) => p.id === thresholding)}
+          samples={samples.map((s) => s.name)}
+          initialSample={sample?.name}
+          populations={[{ id: "all", path: "All events" }, ...populations.filter((p) => p.id !== thresholding).map((p) => ({ id: p.id, path: pathOf(populations, p.id) }))]}
+          onApply={(t, axes) => {
+            setThreshold(thresholding, t, axes);
+            setThresholding(null);
+          }}
+          onClose={() => setThresholding(null)}
+        />
+      )}
       {deriving && (
         <DerivedDialog
           open
