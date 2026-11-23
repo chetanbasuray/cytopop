@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { FcsFile } from "../src/core/fcs";
-import { compareSettings } from "../src/core/qc";
+import { compareSettings, findTime, flagUnstable } from "../src/core/qc";
+import { count, evaluate } from "../src/core/populations";
 
 const file = (keywords: Record<string, string>, params: [string, number][], spill?: number): FcsFile => ({
   version: "FCS3.1",
@@ -30,4 +31,63 @@ test("compareSettings flags differences and keeps equal settings quiet", () => {
 test("compareSettings on identical files reports no differences", () => {
   const a = file({ $CYT: "X" }, [["FSC", 1024]]);
   expect(compareSettings([a, a]).some((r) => r.differs)).toBe(false);
+});
+
+test("flagUnstable finds a flow-rate surge, a signal shift and saturated events", () => {
+  let s = 3;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const time: number[] = [], fl: number[] = [];
+  for (let i = 0; i < 20000; i++) {
+    const t = rand() * 1000;
+    time.push(t);
+    fl.push(1000 + 100 * (rand() - 0.5) + (t >= 700 && t < 720 ? 600 : 0)); // shift between t=700 and 720
+  }
+  for (let i = 0; i < 3000; i++) { time.push(400 + rand() * 20); fl.push(1000 + 100 * (rand() - 0.5)); } // surge
+  for (let i = 0; i < 50; i++) { time.push(rand() * 1000); fl.push(5000); } // saturated at the top
+  const names = ["Time", "FL1"];
+  const { stable, report } = flagUnstable(names, [Float32Array.from(time), Float32Array.from(fl)], [undefined, 5000]);
+  const flaggedWhere = (pred: (t: number, i: number) => boolean) => {
+    let hit = 0, all = 0;
+    time.forEach((t, i) => { if (pred(t, i)) { all++; hit += 1 - stable[i]!; } });
+    return hit / all;
+  };
+  expect(report.timeParameter).toBe("Time");
+  expect(flaggedWhere((t, i) => i >= 20000 && i < 23000)).toBeGreaterThan(0.95);
+  expect(flaggedWhere((t, i) => i < 20000 && t >= 702 && t < 718)).toBeGreaterThan(0.95);
+  expect(report.saturated).toBe(50);
+  // Ordinary events stay: under 5% flagged outside the problem windows.
+  expect(flaggedWhere((t, i) => i < 20000 && (t < 390 || t > 430) && (t < 690 || t > 730))).toBeLessThan(0.05);
+});
+
+test("flagUnstable leaves files without a time parameter alone", () => {
+  const { stable, report } = flagUnstable(["FSC"], [Float32Array.from([1, 2, 3])]);
+  expect(report.timeParameter).toBeUndefined();
+  expect(Array.from(stable)).toEqual([1, 1, 1]);
+  expect(findTime(["FSC", " TIME "])).toBe(1);
+});
+
+test("a clean gate keeps only stable events, inside its parent", () => {
+  const n = 20000;
+  const time = Float32Array.from({ length: n }, (_, i) => i);
+  // Middle tenth of the run has its signal shifted far from the rest.
+  const sig = Float32Array.from({ length: n }, (_, i) => 1000 + (i % 7) * 10 + (i >= 9000 && i < 11000 ? 5000 : 0));
+  const names = ["Time", "FL1"], data = [time, sig];
+  const masks = evaluate([
+    { id: "s", name: "Stable", parentId: null, gate: { kind: "clean" } },
+    { id: "f", name: "Flagged", parentId: null, gate: { kind: "boolean", op: "not", of: ["s"] } },
+  ], names, data);
+  const stable = masks.get("s")!, flagged = masks.get("f")!;
+  expect(stable[0]).toBe(1);
+  expect(stable[10000]).toBe(0);
+  expect(count(stable) + count(flagged)).toBe(n);
+  expect(count(flagged)).toBeGreaterThanOrEqual(2000);
+  expect(count(flagged)).toBeLessThan(2600);
+});
+
+test("values piled at the top but far below the range are not saturated", () => {
+  const n = 10000;
+  const time = Float32Array.from({ length: n }, (_, i) => i);
+  const fsc = Float32Array.from({ length: n }, (_, i) => 50000 + (i % 13) * 300); // discrete steps, top step is 1/13
+  expect(flagUnstable(["Time", "FSC-A"], [time, fsc], [undefined, 262144]).report.saturated).toBe(0);
+  expect(flagUnstable(["Time", "FSC-A"], [time, fsc]).report.saturated).toBe(0);
 });
