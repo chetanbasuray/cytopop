@@ -31,6 +31,7 @@ import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
+import { GridDialog } from "./GridDialog";
 import type { DerivedParameter } from "../core/formula";
 import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
@@ -84,6 +85,7 @@ export function App() {
   const [negative, setNegative] = useState("none");
   const [derived, setDerived] = useState<DerivedParameter[]>(stored?.derived ?? []);
   const [deriving, setDeriving] = useState(false);
+  const [gridOpen, setGridOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -488,6 +490,8 @@ export function App() {
         onTrack={() => setTracking(true)}
         onExportEvents={() => setExportingEvents(true)}
         onDerive={() => setDeriving(true)}
+        onGrid={() => setGridOpen(true)}
+        canGrid={!!sample}
       />
       <SampleBar
         samples={samples}
@@ -597,6 +601,23 @@ export function App() {
             setThresholding(null);
           }}
           onClose={() => setThresholding(null)}
+        />
+      )}
+      {gridOpen && sample && cols && (
+        <GridDialog
+          open
+          title={`${sample.name} · ${parent ? (populations.find((p) => p.id === parent)?.name ?? "") : "All events"}`}
+          names={sample.names}
+          label={(n) => paramLabel(sample, n)}
+          cols={cols}
+          mask={parent ? evaluated.masks?.get(parent) : undefined}
+          scaleFor={scaleFor}
+          onPick={(px, py) => {
+            setX(px);
+            changeY(py);
+            setGridOpen(false);
+          }}
+          onClose={() => setGridOpen(false)}
         />
       )}
       {deriving && (
