@@ -9,7 +9,7 @@ there is no server, and files are read locally.
 
 **Use it in the browser:** https://chetanbasuray.github.io/cytopop/
 **Desktop apps** (macOS, Windows, Linux) come out when a milestone is finished and are attached to that
-[release](https://github.com/chetanbasuray/cytopop/releases). The browser version gets every beta as soon as it is out.
+milestone's [release](https://github.com/chetanbasuray/cytopop/releases). The browser version gets every beta as soon as it is out.
 
 ## System requirements
 
@@ -73,7 +73,8 @@ licensed under the Apache License 2.0, as stated in section 5 of the license.
 
 Pull requests are squash-merged, so the PR title becomes the commit on `main` and must follow
 [Conventional Commits](https://www.conventionalcommits.org/). Releases are automatic: a merge with a `feat:` or `fix:`
-title publishes the next beta (`v0.1.0-beta.N`) with desktop apps attached. Other types such as `docs:`, `ci:` or
+title publishes the next beta (`v0.1.0-beta.N`) to the browser version. Finishing a milestone adds a release
+page with notes and desktop apps. Other types such as `docs:`, `ci:` or
 `chore:` release nothing. Never set the version in `package.json` by hand; it comes from the git tags.
 
 ## License

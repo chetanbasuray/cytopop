@@ -13,8 +13,8 @@ files, compensate, gate populations, export statistics. The users are lab scient
 3. **Clean-room only.** Build from open standards (the FCS specifications, published transforms such as logicle) and
    code under a compatible open-source license, credited in `NOTICE`. A project without a license can be read for
    ideas; its code stays out.
-4. **Versions come from git tags.** `package.json` `version` stays `0.0.0-development`; release notes live on GitHub
-   Releases.
+4. **Versions come from git tags.** `package.json` `version` stays `0.0.0-development`; each beta is a git tag, and a GitHub
+   release page with notes and installers is made only when a milestone is finished.
 5. **New dependencies are pinned and at least two weeks old.** Pick the newest version published two or more weeks ago.
 
 ## Commit type and release
@@ -24,7 +24,8 @@ files, compensate, gate populations, export statistics. The users are lab scient
 | `feat:`, `fix:`, or breaking (`feat!:`, `BREAKING CHANGE:` footer) | next beta, `v0.1.0-beta.N`, live in the browser version |
 | `docs:`, `ci:`, `chore:`, `test:`, `refactor:`, `style:`, `perf:` | none |
 
-Desktop apps are built only when a milestone is finished, and are attached to the newest release at that point.
+Desktop apps are built only when a milestone is finished, together with a release page for the newest tag; betas in
+between are tags only.
 The Release workflow closes a milestone by itself once all its issues are closed (Feedback excepted) and builds
 the apps; they can also be built by hand from the Desktop apps workflow.
 
