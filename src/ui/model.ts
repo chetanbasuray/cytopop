@@ -3,6 +3,7 @@ import type { Spillover } from "../core/fcs";
 import type { FcsFile } from "../core/fcs";
 import type { Dimension } from "../core/gates";
 import type { Population } from "../core/populations";
+import { evaluateFormula, isDerivedParameter, parseFormula, type DerivedParameter } from "../core/formula";
 import { arcsinh, hyperlog, linear, log, logicle, type TransformSpec } from "../core/transforms";
 
 export type Tool = "none" | "rect" | "polygon" | "ellipse" | "quad" | "range";
@@ -16,6 +17,7 @@ export interface Sample {
   names: string[];
   compensated?: Float32Array[];
   compensatedWith?: string; // JSON of the matrix behind `compensated`
+  derivedCols?: { base: Float32Array[]; key: string; all: Float32Array[] };
 }
 
 export interface Template {
@@ -23,23 +25,68 @@ export interface Template {
   scales: Record<string, TransformSpec>;
   spillover?: Spillover; // edited compensation matrix
   samples?: string[]; // file names open when a workspace was saved
+  derived?: DerivedParameter[];
 }
 
 export function isTemplate(t: unknown): t is Template {
   return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object" &&
     ((t as Template).spillover === undefined || isSpillover((t as Template).spillover)) &&
-    ((t as Template).samples === undefined || (Array.isArray((t as Template).samples) && (t as Template).samples!.every((n) => typeof n === "string")));
+    ((t as Template).samples === undefined || (Array.isArray((t as Template).samples) && (t as Template).samples!.every((n) => typeof n === "string"))) &&
+    ((t as Template).derived === undefined || (Array.isArray((t as Template).derived) && (t as Template).derived!.every(isDerivedParameter)));
 }
 
-export function columns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {
-  const spill = spilloverFor(s.names, s.file.spillover, edited);
+/** Sets a sample's parameter names to its file's parameters followed by the derived ones. */
+export function withDerived(s: Sample, derived: DerivedParameter[]): Sample {
+  const names = [...s.file.parameters.map((p) => p.name), ...derived.map((d) => d.name)];
+  if (names.join("\n") !== s.names.join("\n")) s.names = names; // keep the array stable for memo dependencies
+  return s;
+}
+
+function baseColumns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {
+  const names = s.file.parameters.map((p) => p.name);
+  const spill = spilloverFor(names, s.file.spillover, edited);
   if (!useCompensation || !spill) return s.file.data;
   const key = JSON.stringify(spill);
   if (s.compensatedWith !== key || !s.compensated) {
-    s.compensated = compensate(s.names, s.file.data, spill);
+    s.compensated = compensate(names, s.file.data, spill);
     s.compensatedWith = key;
   }
   return s.compensated;
+}
+
+/** File (optionally compensated) columns, then one column per derived name in `s.names`. */
+export function columns(s: Sample, useCompensation: boolean, edited?: Spillover, derived: DerivedParameter[] = []): Float32Array[] {
+  const base = baseColumns(s, useCompensation, edited);
+  const used = derived.filter((d) => s.names.includes(d.name));
+  if (!used.length) return base;
+  const key = JSON.stringify(used);
+  if (s.derivedCols?.base !== base || s.derivedCols.key !== key) {
+    const names = s.file.parameters.map((p) => p.name);
+    const cols = [...base];
+    for (const d of used) {
+      // A sample without a formula's inputs gets an empty (NaN) column, so gates and plots still line up.
+      let col: Float32Array;
+      try {
+        col = evaluateFormula(parseFormula(d.formula, names), names, cols);
+      } catch {
+        col = new Float32Array(s.file.eventCount).fill(NaN);
+      }
+      names.push(d.name);
+      cols.push(col);
+    }
+    s.derivedCols = { base, key, all: cols };
+  }
+  return s.derivedCols.all;
+}
+
+/** Linear scale over the middle 99 % of a derived column's finite values, padded by 5 %; ratios have long tails. */
+export function rangeScale(col: Float32Array): TransformSpec {
+  const v = col.filter(Number.isFinite).sort();
+  const at = (p: number) => v[Math.min(v.length - 1, Math.floor(p * v.length))]!;
+  const [min, max] = v.length ? [at(0.005), at(0.995)] : [0, 1];
+  if (!(max > min)) return { kind: "linear", min: min - 1, max: max + 1 };
+  const pad = (max - min) * 0.05;
+  return { kind: "linear", min: min - pad, max: max + pad };
 }
 
 export function defaultScale(s: Sample | undefined, name: string): TransformSpec {

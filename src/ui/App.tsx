@@ -8,6 +8,7 @@ import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
   type Sample, type Template, type Tool,
+  rangeScale, withDerived,
 } from "./model";
 import { Footer } from "./Footer";
 import { spilloverFor } from "../core/compensation";
@@ -27,6 +28,8 @@ import { forgetFile, keepFile, keptFiles, storageMessage } from "./storage";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
+import { DerivedDialog } from "./DerivedDialog";
+import type { DerivedParameter } from "../core/formula";
 import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
 
@@ -77,11 +80,14 @@ export function App() {
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [negative, setNegative] = useState("none");
+  const [derived, setDerived] = useState<DerivedParameter[]>(stored?.derived ?? []);
+  const [deriving, setDeriving] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  for (const s of samples) withDerived(s, derived);
   const sample = samples.find((s) => s.id === active);
   const names = sample?.names ?? [];
   const x = names.includes(xRaw) ? xRaw : (names.find((n) => /^FSC-A/i.test(n)) ?? names[0] ?? "");
@@ -108,17 +114,22 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [history.undo, history.redo]);
 
-  const scaleFor = useCallback((name: string) => scales[name] ?? defaultScale(sample, name), [scales, sample]);
+  const scaleFor = useCallback((name: string) => {
+    const set = scales[name];
+    if (set) return set;
+    const i = sample && sample.file.parameters.length <= sample.names.indexOf(name) ? sample.names.indexOf(name) : -1;
+    return i >= 0 ? rangeScale(columns(sample!, useComp, editedSpill, derived)[i]!) : defaultScale(sample, name);
+  }, [scales, sample, useComp, editedSpill, derived]);
   const xDim: Dimension = { param: x, scale: scaleFor(x) };
   const yDim: Dimension | null = histogram ? null : { param: y, scale: scaleFor(y) };
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill]);
+  }, [populations, scales, editedSpill, derived]);
 
   useEffect(() => {
     try {
@@ -128,7 +139,7 @@ export function App() {
     }
   }, [statKeys]);
 
-  const cols = sample ? columns(sample, useComp, editedSpill) : undefined;
+  const cols = sample ? columns(sample, useComp, editedSpill, derived) : undefined;
   const evaluated = useMemo(() => {
     if (!sample || !cols) return { masks: undefined, error: undefined };
     try {
@@ -252,7 +263,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const loadTemplate = async (file: File) => {
@@ -262,6 +273,7 @@ export function App() {
       setPopulations(t.populations);
       setScales((s) => ({ ...s, ...t.scales }));
       setEditedSpill(t.spillover);
+      setDerived(t.derived ?? []);
       setParent(null);
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
@@ -273,7 +285,7 @@ export function App() {
     }
   };
 
-  const cleaningRows = cleaning ? samples.map((s) => ({ name: s.name, report: cleaned(s.names, columns(s, useComp, editedSpill), s.file.parameters.map((q) => q.range)).report })) : [];
+  const cleaningRows = cleaning ? samples.map((s) => ({ name: s.name, report: cleaned(s.names, columns(s, useComp, editedSpill, derived), s.file.parameters.map((q) => q.range)).report })) : [];
   // Runs in acquisition order; files without $DATE keep their open order after the dated ones.
   const runs = tracking
     ? samples.map((s) => ({ s, date: runDate(s.file.keywords) }))
@@ -281,7 +293,7 @@ export function App() {
     : [];
   const trackValues = (populationId: string, channel: string, stat: ChannelStatKey) =>
     runs.map(({ s }) => {
-      const data = columns(s, useComp, editedSpill);
+      const data = columns(s, useComp, editedSpill, derived);
       const col = data[s.names.indexOf(channel)];
       if (!col) return NaN;
       try {
@@ -303,7 +315,7 @@ export function App() {
       const [sid, pid] = key.split("|");
       const s = samples.find((q) => q.id === sid);
       if (!s || !pid) return [];
-      const data = columns(s, useComp, editedSpill);
+      const data = columns(s, useComp, editedSpill, derived);
       const xs = data[s.names.indexOf(x)];
       if (!xs) return [];
       let mask: Uint8Array | undefined;
@@ -357,7 +369,7 @@ export function App() {
     const rows: (string | number)[][] = [];
     const split = splitKeys(statKeys);
     for (const s of samples) {
-      const data = columns(s, useComp, editedSpill);
+      const data = columns(s, useComp, editedSpill, derived);
       let masks: Map<string, Uint8Array>;
       try {
         masks = evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range));
@@ -419,6 +431,7 @@ export function App() {
         onClean={() => setCleaning(true)}
         onTrack={() => setTracking(true)}
         onExportEvents={() => setExportingEvents(true)}
+        onDerive={() => setDeriving(true)}
       />
       <SampleBar
         samples={samples}
@@ -514,6 +527,15 @@ export function App() {
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
       <CleaningDialog open={cleaning} rows={cleaningRows} applied={cleanApplied} onApply={addStable} onClose={() => setCleaning(false)} />
+      {deriving && (
+        <DerivedDialog
+          open
+          derived={derived}
+          names={sample?.file.parameters.map((p) => p.name) ?? []}
+          onChange={setDerived}
+          onClose={() => setDeriving(false)}
+        />
+      )}
       {exportingEvents && (
         <ExportDialog
           open
