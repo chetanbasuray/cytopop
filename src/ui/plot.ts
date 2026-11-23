@@ -1,3 +1,4 @@
+import { binGrid, logLevels, marchingSquares, probabilityLevels, smooth } from "../core/contour";
 import type { Gate } from "../core/gates";
 import type { Transform } from "../core/transforms";
 
@@ -67,6 +68,76 @@ export function drawDensity(f: Frame, xs: Float32Array, ys: Float32Array, xt: Tr
   off.getContext("2d")!.putImageData(img, 0, 0);
   f.ctx.imageSmoothingEnabled = false;
   f.ctx.drawImage(off, M.left, M.top, f.w, f.h);
+}
+
+export type PlotStyle = "density" | "dot" | "contour5" | "contour10" | "contour2" | "contourLog";
+export const PLOT_STYLES: [PlotStyle, string][] = [
+  ["density", "Density"], ["dot", "Dots"], ["contour5", "Contour 5%"], ["contour10", "Contour 10%"],
+  ["contour2", "Contour 2%"], ["contourLog", "Contour log"],
+];
+
+/** Plot-area coordinates (0..1, v up) of the events to draw, after the mask and the draw limit. */
+function plotted(xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask?: Uint8Array) {
+  const step = drawStep(xs.length);
+  const us: number[] = [], vs: number[] = [];
+  for (let e = 0; e < xs.length; e += step) {
+    if (mask && !mask[e]) continue;
+    const u = xt.forward(xs[e]!), v = yt.forward(ys[e]!);
+    if (u >= 0 && u < 1 && v >= 0 && v < 1) { us.push(u); vs.push(v); }
+  }
+  return { us, vs };
+}
+
+/** One pixel per event in the theme's text colour; `keep` filters events (contour outliers). */
+function dots(f: Frame, us: number[], vs: number[], keep: (k: number) => boolean = () => true, alpha = 1): void {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(f.w * dpr)), H = Math.max(1, Math.round(f.h * dpr));
+  const img = new ImageData(W, H);
+  for (let k = 0; k < us.length; k++) {
+    if (!keep(k)) continue;
+    const x = Math.min(W - 1, Math.floor(us[k]! * W)), y = Math.min(H - 1, Math.floor((1 - vs[k]!) * H));
+    img.data[(y * W + x) * 4 + 3] = 255;
+  }
+  const off = new OffscreenCanvas(W, H);
+  const o = off.getContext("2d")!;
+  o.putImageData(img, 0, 0);
+  // Tint the opaque pixels with the text colour, so dots follow the light and dark theme.
+  o.globalCompositeOperation = "source-in";
+  o.fillStyle = css("--mui-palette-text-primary");
+  o.fillRect(0, 0, W, H);
+  f.ctx.globalAlpha = alpha;
+  f.ctx.drawImage(off, M.left, M.top, f.w, f.h);
+  f.ctx.globalAlpha = 1;
+}
+
+export function drawDots(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, mask?: Uint8Array): void {
+  const { us, vs } = plotted(xs, ys, xt, yt, mask);
+  dots(f, us, vs);
+}
+
+/** Contour lines of the smoothed density, with events outside the lowest contour drawn as faint dots. */
+export function drawContour(f: Frame, xs: Float32Array, ys: Float32Array, xt: Transform, yt: Transform, style: PlotStyle, mask?: Uint8Array): void {
+  const G = 128;
+  const { us, vs } = plotted(xs, ys, xt, yt, mask);
+  const grid = smooth(binGrid(us, vs, G), G);
+  const levels = style === "contourLog" ? logLevels(grid) : probabilityLevels(grid, style === "contour10" ? 0.1 : style === "contour2" ? 0.02 : 0.05);
+  const lowest = levels[0] ?? Infinity;
+  const cell = (k: number) => grid[Math.min(G - 1, Math.floor(vs[k]! * G)) * G + Math.min(G - 1, Math.floor(us[k]! * G))]!;
+  dots(f, us, vs, (k) => cell(k) < lowest, 0.5);
+  const { ctx } = f;
+  // Grid point x sits at the centre of cell x.
+  const px = (x: number) => M.left + ((x + 0.5) / G) * f.w, py = (y: number) => M.top + (1 - (y + 0.5) / G) * f.h;
+  ctx.strokeStyle = css("--mui-palette-text-primary");
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const level of levels) {
+    const seg = marchingSquares(grid, G, level);
+    for (let k = 0; k < seg.length; k += 4) {
+      ctx.moveTo(px(seg[k]!), py(seg[k + 1]!));
+      ctx.lineTo(px(seg[k + 2]!), py(seg[k + 3]!));
+    }
+  }
+  ctx.stroke();
 }
 
 export function drawHistogram(f: Frame, xs: Float32Array, xt: Transform, mask?: Uint8Array): void {
