@@ -5,7 +5,8 @@ import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import { percentileOf, splitEdge, withThresholds, type Dimension, type Gate, type Quadrant, type Threshold } from "../core/gates";
 import { fromSpec } from "../core/transforms";
 import { readWsp } from "../core/wsp";
-import { channelStats, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
+import { writeWsp } from "../core/wsp-write";
+import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
@@ -343,6 +344,35 @@ export function App() {
       populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
+  const saveWsp = () => {
+    try {
+      const skipped: string[] = [];
+      const input = samples.filter((s) => s.name !== DEMO_NAME).flatMap((s) => {
+        let masks: Map<string, Uint8Array>;
+        try {
+          masks = evaluate(populations, s.names, columns(s, useComp, editedSpill, derived), s.file.parameters.map((q) => q.range));
+        } catch (err) {
+          // A sample the gates do not fit (another panel) is left out rather than failing the whole export.
+          skipped.push(`${s.name}: not saved; ${(err as Error).message}`);
+          return [];
+        }
+        return [{
+          name: s.name,
+          file: s.file,
+          spillover: spilloverFor(s.file.parameters.map((q) => q.name), s.file.spillover, editedSpill),
+          counts: new Map([...masks].map(([id, m]) => [id, eventsIn(m)])),
+        }];
+      });
+      if (!input.length) throw new Error(skipped.length ? "None of the open files fit these gates" : "Open at least one FCS file to save a .wsp workspace");
+      const { xml, warnings } = writeWsp({ populations, scales: Object.fromEntries(input.flatMap((s) => s.file.parameters).map((q) => [q.name, scaleFor(q.name)])), compensated: useComp, samples: input });
+      download("cytopop-workspace.wsp", xml, "application/xml");
+      const lines = [...skipped, ...warnings];
+      if (lines.length) setImportReport({ title: "Workspace saved with changes", summary: `Saved ${populations.length} populations for ${input.length} samples. Not everything could be saved exactly:`, lines });
+    } catch (err) {
+      setToast({ severity: "error", message: (err as Error).message });
+    }
+  };
+
   const loadWsp = (file: File, xml: string) => {
     const w = readWsp(xml, samples.map((s) => s.name));
     setPopulations(w.populations);
@@ -519,6 +549,7 @@ export function App() {
         onExport={exportCsv}
         canExport={samples.length > 0}
         onSaveTemplate={saveTemplate}
+        onSaveWsp={saveWsp}
         onLoadTemplate={loadTemplate}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}

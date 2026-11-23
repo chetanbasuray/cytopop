@@ -61,6 +61,7 @@ export function TopBar(props: {
   onExport: () => void;
   canExport: boolean;
   onSaveTemplate: () => void;
+  onSaveWsp: () => void;
   onLoadTemplate: (file: File) => void;
   onCheckSettings: () => void;
   onClean: () => void;
@@ -115,6 +116,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><SaveOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Save workspace</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onSaveWsp();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><SaveOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Save as .wsp workspace</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {
