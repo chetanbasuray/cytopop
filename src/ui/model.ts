@@ -3,7 +3,7 @@ import type { Spillover } from "../core/fcs";
 import type { FcsFile } from "../core/fcs";
 import type { Dimension } from "../core/gates";
 import type { Population } from "../core/populations";
-import { arcsinh, linear, log, logicle, type TransformSpec } from "../core/transforms";
+import { arcsinh, hyperlog, linear, log, logicle, type TransformSpec } from "../core/transforms";
 
 export type Tool = "none" | "rect" | "polygon" | "ellipse" | "quad" | "range";
 export const HIST = "__histogram__";
@@ -50,12 +50,13 @@ export function defaultScale(s: Sample | undefined, name: string): TransformSpec
 }
 
 export function retarget(spec: TransformSpec, kind: TransformSpec["kind"]): TransformSpec {
-  const top = spec.kind === "logicle" ? spec.T : spec.max;
+  const top = spec.kind === "logicle" || spec.kind === "hyperlog" ? spec.T : spec.max;
   switch (kind) {
     case "linear": return linear(0, top).spec;
     case "log": return log(1, top).spec;
     case "arcsinh": return arcsinh(150, -1000, top).spec;
     case "logicle": return logicle(top, 0.5, 4.5, 0).spec;
+    case "hyperlog": return hyperlog(top, 0.5, 4.5, 0).spec;
   }
 }
 

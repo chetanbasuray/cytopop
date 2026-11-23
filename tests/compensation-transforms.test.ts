@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CompensationError, compensate, invert, isSpillover, spilloverFor } from "../src/core/compensation";
-import { arcsinh, fromSpec, linear, log, logicle } from "../src/core/transforms";
+import { arcsinh, fromSpec, hyperlog, linear, log, logicle } from "../src/core/transforms";
 
 test("invert returns the inverse matrix", () => {
   const inv = invert([
@@ -73,4 +73,27 @@ test("isSpillover accepts only square numeric matrices", () => {
   expect(isSpillover({ parameters: ["A"], matrix: [["1"]] })).toBe(false);
   expect(isSpillover({ parameters: [1], matrix: [[1]] })).toBe(false);
   expect(isSpillover(null)).toBe(false);
+});
+
+test("hyperlog maps 0 to (W+A)/(M+A) and T to 1, and round-trips", () => {
+  const t = hyperlog(262144, 0.5, 4.5, 0);
+  expect(t.forward(262144)).toBeCloseTo(1, 6);
+  expect(t.forward(0)).toBeCloseTo(0.5 / 4.5, 6);
+  for (const x of [-500, -10, 0, 3, 250, 5000, 100000]) {
+    expect(t.inverse(t.forward(x))).toBeCloseTo(x, 2);
+  }
+  expect(fromSpec(t.spec).forward(420)).toBeCloseTo(t.forward(420));
+});
+
+test("hyperlog is odd about its zero point and close to logicle at high values", () => {
+  const h = hyperlog(262144, 0.5, 4.5, 0);
+  const zero = h.forward(0);
+  expect(h.forward(-1000) - zero).toBeCloseTo(zero - h.forward(1000), 6);
+  const l = logicle(262144, 0.5, 4.5, 0);
+  expect(Math.abs(h.forward(100000) - l.forward(100000))).toBeLessThan(0.01);
+});
+
+test("hyperlog rejects a missing linear region", () => {
+  expect(() => hyperlog(262144, 0, 4.5, 0)).toThrow(RangeError);
+  expect(() => hyperlog(262144, 3, 4.5, 0)).toThrow(RangeError);
 });
