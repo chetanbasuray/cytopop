@@ -8,7 +8,8 @@ compensate, draw gates, build a population hierarchy and export statistics. Your
 there is no server, and files are read locally.
 
 **Use it in the browser:** https://chetanbasuray.github.io/cytopop/
-**Desktop apps** (macOS, Windows, Linux) are attached to each [release](https://github.com/chetanbasuray/cytopop/releases).
+**Desktop apps** (macOS, Windows, Linux) come out when a milestone is finished and are attached to that
+[release](https://github.com/chetanbasuray/cytopop/releases). The browser version gets every beta as soon as it is out.
 
 ## System requirements
 
