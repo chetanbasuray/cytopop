@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import type { Dimension, Gate, Quadrant } from "../core/gates";
-import { channelStats, DEFAULT_STATS, evaluate, pathOf, populationStats, STATS, toCsv, type Population, type StatKey } from "../core/populations";
+import { channelStats, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
@@ -76,6 +76,7 @@ export function App() {
   const [overlayKeys, setOverlayKeys] = useState<string[]>([]);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
+  const [negative, setNegative] = useState("none");
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -278,7 +279,7 @@ export function App() {
     ? samples.map((s) => ({ s, date: runDate(s.file.keywords) }))
         .sort((a, b) => (a.date && b.date ? +a.date - +b.date : a.date ? -1 : b.date ? 1 : 0))
     : [];
-  const trackValues = (populationId: string, channel: string, stat: StatKey) =>
+  const trackValues = (populationId: string, channel: string, stat: ChannelStatKey) =>
     runs.map(({ s }) => {
       const data = columns(s, useComp, editedSpill);
       const col = data[s.names.indexOf(channel)];
@@ -354,7 +355,7 @@ export function App() {
 
   const exportCsv = () => {
     const rows: (string | number)[][] = [];
-    const picked = STATS.filter((st) => statKeys.includes(st.key));
+    const split = splitKeys(statKeys);
     for (const s of samples) {
       const data = columns(s, useComp, editedSpill);
       let masks: Map<string, Uint8Array>;
@@ -364,20 +365,21 @@ export function App() {
         rows.push([s.name, `Error: ${(err as Error).message}`]);
         continue;
       }
-      const values = (mask?: Uint8Array) =>
-        statChannels.flatMap((ch) => {
-          const col = data[s.names.indexOf(ch)];
-          const c = col ? channelStats(col, mask) : undefined;
-          return picked.map((st) => (c ? c[st.key] : NaN));
-        });
-      rows.push([s.name, "All events", s.file.eventCount, 100, 100, ...values()]);
+      const cols = statChannels.map((ch) => data[s.names.indexOf(ch)]);
+      const negMask = masks.get(negative);
+      const neg = negMask ? cols.map((col) => (col ? channelStats(col, negMask) : EMPTY_STATS)) : undefined;
+      const volumeUl = volumeMicrolitres(s.file.keywords);
+      const values = (count: number, percentGrandparent: number, mask?: Uint8Array) =>
+        statValues(statKeys, { cols, mask, count, percentGrandparent, volumeUl, negative: neg });
+      rows.push([s.name, "All events", s.file.eventCount, 100, 100, ...values(s.file.eventCount, NaN)]);
       for (const p of populationStats(populations, masks, s.file.eventCount)) {
-        rows.push([s.name, p.path, p.count, p.percentParent, p.percentTotal, ...values(masks.get(p.id))]);
+        rows.push([s.name, p.path, p.count, p.percentParent, p.percentTotal, ...values(p.count, p.percentGrandparent, masks.get(p.id))]);
       }
     }
     const header = [
       "Sample", "Population", "Count", "% parent", "% total",
-      ...statChannels.flatMap((ch) => picked.map((st) => `${st.label} ${ch}`)),
+      ...split.population.map((k) => STATS.find((st) => st.key === k)!.label),
+      ...statChannels.flatMap((ch) => split.channel.map((k) => `${STATS.find((st) => st.key === k)!.label} ${ch}`)),
     ];
     download("cytopop-statistics.csv", toCsv(header, rows), "text/csv");
   };
@@ -503,6 +505,9 @@ export function App() {
             onChannels={setStatChannels}
             statKeys={statKeys}
             onStatKeys={setStatKeys}
+            negative={negative}
+            onNegative={setNegative}
+            volumeUl={sample && volumeMicrolitres(sample.file.keywords)}
           />
         </Box>
       </Box>

@@ -12,14 +12,14 @@ import {
 } from "@mui/material";
 import { useRef } from "react";
 import { leveyJennings, type LjChart } from "../core/lj";
-import { STATS, type StatKey } from "../core/populations";
+import { STATS, type ChannelStatKey } from "../core/populations";
 
 export function TrackingDialog(props: {
   open: boolean;
   runs: { name: string; date?: Date }[];
   populations: { id: string; path: string }[];
   channels: { name: string; label: string }[];
-  compute: (populationId: string, channel: string, stat: StatKey) => number[];
+  compute: (populationId: string, channel: string, stat: ChannelStatKey) => number[];
   onExportCsv: (header: string[], rows: (string | number)[][]) => void;
   onExportSvg: (svg: string) => void;
   onClose: () => void;
@@ -28,7 +28,7 @@ export function TrackingDialog(props: {
 
   const [populationId, setPopulationId] = React.useState(props.populations[0]?.id ?? "");
   const [channel, setChannel] = React.useState<string>(() => props.channels[0]?.name ?? "");
-  const [stat, setStat] = React.useState<StatKey>("median");
+  const [stat, setStat] = React.useState<ChannelStatKey>("median");
   const [baseline, setBaseline] = React.useState<number>(props.runs.length);
 
   const runs = props.runs;
@@ -149,10 +149,10 @@ export function TrackingDialog(props: {
             select
             label="Statistic"
             value={stat}
-            onChange={(e) => setStat(e.target.value as StatKey)}
+            onChange={(e) => setStat(e.target.value as ChannelStatKey)}
             size="small"
           >
-            {STATS.map((s) => (
+            {STATS.filter((s) => s.per === "channel" && s.key !== "si").map((s) => (
               <MenuItem key={s.key} value={s.key}>
                 {s.label}
               </MenuItem>
