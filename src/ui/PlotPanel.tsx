@@ -20,7 +20,7 @@ import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { descendants, HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
 import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHighlight, drawHistogram, drawOverlay, frame, M, PLOT_STYLES, type Frame, type OverlayLayer, type PlotStyle } from "./plot";
 
-const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["arcsinh", "Arcsinh"]];
+const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["hyperlog", "Hyperlog"], ["arcsinh", "Arcsinh"]];
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; hint: string }[] = [
   { tool: "none", label: "Pointer", icon: <NearMeOutlined fontSize="small" />, hint: "" },

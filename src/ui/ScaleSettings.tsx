@@ -46,7 +46,7 @@ export function ScaleSettings(props: {
         <Stack spacing={2} sx={{ p: 2, width: 280 }}>
           <Typography variant="subtitle2">{props.label} settings</Typography>
 
-          {spec.kind === "logicle" && (
+          {(spec.kind === "logicle" || spec.kind === "hyperlog") && (
             <>
               <Stack spacing={1}>
                 <Typography variant="caption">Positive decades</Typography>
@@ -67,7 +67,7 @@ export function ScaleSettings(props: {
                     const maxA = newM - 2 * newW;
                     if (newA < minA) newA = minA;
                     if (newA > maxA) newA = maxA;
-                    props.onChange({ kind: "logicle", T: spec.T, W: newW, M: newM, A: newA });
+                    props.onChange({ kind: spec.kind, T: spec.T, W: newW, M: newM, A: newA });
                   }}
                 />
               </Stack>
@@ -77,7 +77,7 @@ export function ScaleSettings(props: {
                 <Slider
                   aria-label="Negative decades"
                   value={spec.W}
-                  min={0}
+                  min={spec.kind === "hyperlog" ? 0.05 : 0} // hyperlog needs a linear region
                   max={Math.min(2, spec.M / 2)}
                   step={0.05}
                   valueLabelDisplay="auto"
@@ -89,7 +89,7 @@ export function ScaleSettings(props: {
                     const maxA = spec.M - 2 * newW;
                     if (newA < minA) newA = minA;
                     if (newA > maxA) newA = maxA;
-                    props.onChange({ kind: "logicle", T: spec.T, W: newW, M: spec.M, A: newA });
+                    props.onChange({ kind: spec.kind, T: spec.T, W: newW, M: spec.M, A: newA });
                   }}
                 />
               </Stack>
@@ -102,7 +102,7 @@ export function ScaleSettings(props: {
                 onChange={(e) => {
                   const val = Number(e.target.value);
                   if (!Number.isNaN(val) && val >= 1) {
-                    props.onChange({ kind: "logicle", T: val, W: spec.W, M: spec.M, A: spec.A });
+                    props.onChange({ kind: spec.kind, T: val, W: spec.W, M: spec.M, A: spec.A });
                   }
                 }}
               />
