@@ -1,4 +1,6 @@
 import DeleteOutline from "@mui/icons-material/DeleteOutlineOutlined";
+import Redo from "@mui/icons-material/RedoOutlined";
+import Undo from "@mui/icons-material/UndoOutlined";
 import { Box, Button, IconButton, ListItemButton, ListItemText, Paper, Tooltip, Typography } from "@mui/material";
 import type { Population, PopulationStats } from "../core/populations";
 import { MONO } from "./theme";
@@ -14,6 +16,8 @@ export function Populations(props: {
   onSelectPopulation: (id: string | null) => void;
   onRemovePopulation: (id: string) => void;
   onCombine: () => void;
+  onUndo?: () => void; // undefined when there is nothing to undo
+  onRedo?: () => void;
 }) {
   const { populations, stats } = props;
 
@@ -63,11 +67,23 @@ export function Populations(props: {
       <section>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1, px: 1.5 }}>
           <Typography variant="h2" sx={{ color: "text.secondary" }}>Populations</Typography>
-          <Tooltip title="Combine populations with AND, OR or NOT">
-            <span>
-              <Button size="small" onClick={props.onCombine} disabled={populations.length === 0}>Combine</Button>
-            </span>
-          </Tooltip>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <Tooltip title="Undo (Ctrl+Z)">
+              <span>
+                <IconButton size="small" aria-label="Undo" onClick={props.onUndo} disabled={!props.onUndo}><Undo fontSize="small" /></IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Redo (Shift+Ctrl+Z)">
+              <span>
+                <IconButton size="small" aria-label="Redo" onClick={props.onRedo} disabled={!props.onRedo}><Redo fontSize="small" /></IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Combine populations with AND, OR or NOT">
+              <span>
+                <Button size="small" onClick={props.onCombine} disabled={populations.length === 0}>Combine</Button>
+              </span>
+            </Tooltip>
+          </Box>
         </Box>
         <Box component="ul" aria-label="Population tree" sx={{ m: 0, p: 0, display: "grid", gap: 0.5 }}>
           {node(null, "All events", props.totalEvents ? props.totalEvents.toLocaleString() : "", 0)}

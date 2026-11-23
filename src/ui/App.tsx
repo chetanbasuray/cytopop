@@ -20,6 +20,7 @@ import { TrackingDialog } from "./TrackingDialog";
 import { runDate } from "../core/lj";
 import { cleaned, compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
+import { useHistory } from "./history";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
 import { SampleBar } from "./SampleBar";
@@ -55,7 +56,8 @@ export function App() {
   const stored = useMemo(loadStored, []);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [populations, setPopulations] = useState<Population[]>(stored?.populations ?? []);
+  const history = useHistory<Population[]>(stored?.populations ?? []);
+  const populations = history.value, setPopulations = history.set;
   const [scales, setScales] = useState<Record<string, TransformSpec>>(stored?.scales ?? {});
   const [parent, setParent] = useState<string | null>(null);
   const [xRaw, setX] = useState("");
@@ -81,6 +83,24 @@ export function App() {
   const kept = statRaw.filter((n) => names.includes(n));
   const statChannels = kept.length ? kept : [x];
   const histogram = y === HIST;
+
+  // Undo can remove the selected population; fall back to All events.
+  useEffect(() => {
+    if (parent && !populations.some((p) => p.id === parent)) setParent(null);
+  }, [parent, populations]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" && e.key.toLowerCase() !== "y") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return; // keep text undo in fields
+      e.preventDefault();
+      if (e.key.toLowerCase() === "y" || e.shiftKey) history.redo();
+      else history.undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [history.undo, history.redo]);
 
   const scaleFor = useCallback((name: string) => scales[name] ?? defaultScale(sample, name), [scales, sample]);
   const xDim: Dimension = { param: x, scale: scaleFor(x) };
@@ -352,6 +372,8 @@ export function App() {
             onSelectPopulation={setParent}
             onRemovePopulation={removePopulation}
             onCombine={() => setCombining(true)}
+            onUndo={history.canUndo ? history.undo : undefined}
+            onRedo={history.canRedo ? history.redo : undefined}
           />
         </Box>
         <Box sx={{ gridArea: "plot", minWidth: 0 }}>
