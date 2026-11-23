@@ -21,8 +21,11 @@ files, compensate, gate populations, export statistics. The users are lab scient
 
 | Type | Release |
 |---|---|
-| `feat:`, `fix:`, or breaking (`feat!:`, `BREAKING CHANGE:` footer) | next beta, `v0.1.0-beta.N`, with desktop apps attached |
+| `feat:`, `fix:`, or breaking (`feat!:`, `BREAKING CHANGE:` footer) | next beta, `v0.1.0-beta.N`, live in the browser version |
 | `docs:`, `ci:`, `chore:`, `test:`, `refactor:`, `style:`, `perf:` | none |
+
+Desktop apps are built only when a milestone is closed (or by hand from the Desktop apps workflow), and are
+attached to the newest release at that point. Close a milestone only when its last issue is merged and released.
 
 While CytoPop is in beta, breaking changes stay on the 0.x line. Leaving beta means releasing from the `stable`
 branch; only the owner decides that.
