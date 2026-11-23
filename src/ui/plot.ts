@@ -347,7 +347,10 @@ export function drawGate(f: Frame, gate: Gate, label: string, preview = false): 
       });
       if (!preview) ctx.closePath();
       const [u0, v0] = gate.points[0] ?? [0, 0];
-      anchor = toPx(f, u0, v0);
+      // Quadrant and divider polygons reach far off the plot; label them at the middle of their visible part.
+      const off = gate.points.some(([u, v]) => u < 0 || u > 1 || v < 0 || v > 1);
+      const mid = (i: 0 | 1) => gate.points.reduce((a, p) => a + clamp(p[i]), 0) / gate.points.length;
+      anchor = off ? toPx(f, mid(0), mid(1)) : toPx(f, u0, v0);
       break;
     }
     case "ellipse": {

@@ -261,11 +261,15 @@ export function App() {
     setNaming({ kind: "gate", gate, defaultName: fallback });
   };
   const onQuadrants = (gates: Record<Quadrant, Gate>) => setNaming({ kind: "quad", gates, defaultName: "Q" });
+  const onDivider = (gates: [Gate, Gate], labels: [string, string]) => setNaming({ kind: "split", gates, labels, defaultName: histogram ? x : "Split" });
 
   const confirmName = (name: string) => {
     if (!naming) return;
     if (naming.kind === "gate") {
       setPopulations((p) => [...p, { id: newId(), name, parentId: parent, gate: naming.gate }]);
+    } else if (naming.kind === "split") {
+      const [a, b] = naming.gates;
+      setPopulations((p) => [...p, { id: newId(), name: `${name} ${naming.labels[0]}`, parentId: parent, gate: a }, { id: newId(), name: `${name} ${naming.labels[1]}`, parentId: parent, gate: b }]);
     } else {
       const label: Record<Quadrant, string> = { "++": `${x}+ ${y}+`, "-+": `${x}- ${y}+`, "--": `${x}- ${y}-`, "+-": `${x}+ ${y}-` };
       const added = (Object.keys(naming.gates) as Quadrant[]).map((k, i) => ({
@@ -557,6 +561,7 @@ export function App() {
             onEditMatrix={() => setEditingMatrix(true)}
             onGate={onGate}
             onQuadrants={onQuadrants}
+            onDivider={onDivider}
             onOpen={() => fileInput.current?.click()}
             onLoadDemo={loadDemo}
           />

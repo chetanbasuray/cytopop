@@ -81,6 +81,65 @@ export function withThresholds(gate: Gate, resolve: (t: Threshold, dim: Dimensio
   return g;
 }
 
+type Point = [number, number];
+/** One quadrant arm: a segment from where it leaves the centre lines to a point it passes through. */
+export interface Arm {
+  origin: Point;
+  end: Point;
+}
+export interface Arms {
+  up: Arm;
+  right: Arm;
+  down: Arm;
+  left: Arm;
+}
+
+// Arms reach this far in display units (the plot is 0..1); corners sit beyond them. Small enough to draw on a canvas.
+const FAR = 1e3;
+
+function extend(a: Arm): Point {
+  const dx = a.end[0] - a.origin[0];
+  const dy = a.end[1] - a.origin[1];
+  const len = Math.hypot(dx, dy) || 1;
+  return [a.origin[0] + (dx / len) * FAR, a.origin[1] + (dy / len) * FAR];
+}
+
+/**
+ * Quadrants with angled (hinged) or offset (staggered) arms, as four polygon gates around `centre`.
+ * Returns undefined unless each arm points into its own half (up has dy > 0, right dx > 0, and so on).
+ */
+export function hingedQuadrants(x: Dimension, y: Dimension, centre: Point, arms: Arms): Record<Quadrant, Gate> | undefined {
+  const d = (a: Arm) => [a.end[0] - a.origin[0], a.end[1] - a.origin[1]] as const;
+  if (!(d(arms.up)[1] > 0 && d(arms.right)[0] > 0 && d(arms.down)[1] < 0 && d(arms.left)[0] < 0)) return undefined;
+  const C = 10 * FAR;
+  const [U, R, D, L] = [arms.up, arms.right, arms.down, arms.left].map(extend) as [Point, Point, Point, Point];
+  const poly = (points: Point[]): Gate => ({ kind: "polygon", x, y, points });
+  const { up, right, down, left } = arms;
+  return {
+    "++": poly([centre, up.origin, U, [C, C], R, right.origin]),
+    "-+": poly([centre, left.origin, L, [-C, C], U, up.origin]),
+    "--": poly([centre, down.origin, D, [-C, -C], L, left.origin]),
+    "+-": poly([centre, right.origin, R, [C, -C], D, down.origin]),
+  };
+}
+
+/** A line through a and b splitting a 2D plot into the side on its left (walking a to b) and the side on its right. */
+export function divider(x: Dimension, y: Dimension, a: Point, b: Point): [Gate, Gate] {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const [dx, dy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+  const p1: Point = [a[0] - dx * FAR, a[1] - dy * FAR];
+  const p2: Point = [a[0] + dx * FAR, a[1] + dy * FAR];
+  const side = (s: number): Gate => ({
+    kind: "polygon", x, y, points: [p1, p2, [p2[0] - dy * FAR * s, p2[1] + dx * FAR * s], [p1[0] - dy * FAR * s, p1[1] + dx * FAR * s]],
+  });
+  return [side(1), side(-1)];
+}
+
+/** A histogram split at one value into events below it and events at or above it. */
+export function histogramDivider(x: Dimension, at: number): [Gate, Gate] {
+  return [{ kind: "range", x, min: -1e9, max: at }, { kind: "range", x, min: at, max: 1e9 }];
+}
+
 export function pointInPolygon(px: number, py: number, points: [number, number][]): boolean {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {

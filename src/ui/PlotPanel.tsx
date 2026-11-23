@@ -1,5 +1,7 @@
 import CropSquare from "@mui/icons-material/CropSquare";
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
+import GridGoldenratioOutlined from "@mui/icons-material/GridGoldenratioOutlined";
+import SplitscreenOutlined from "@mui/icons-material/SplitscreenOutlined";
 import NearMeOutlined from "@mui/icons-material/NearMeOutlined";
 import PanoramaFishEye from "@mui/icons-material/PanoramaFishEye";
 import PentagonOutlined from "@mui/icons-material/PentagonOutlined";
@@ -11,7 +13,7 @@ import {
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { quadrants, type Dimension, type Gate, type Quadrant } from "../core/gates";
+import { divider, hingedQuadrants, histogramDivider, quadrants, type Arm, type Dimension, type Gate, type Quadrant } from "../core/gates";
 import type { Population, PopulationStats } from "../core/populations";
 import { fromSpec, type TransformSpec } from "../core/transforms";
 import { ScaleSettings } from "./ScaleSettings";
@@ -28,10 +30,20 @@ const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; hint: string }[
   { tool: "polygon", label: "Polygon", icon: <PentagonOutlined fontSize="small" />, hint: "Click or tap to add points. Close by selecting the first point or Finish" },
   { tool: "ellipse", label: "Ellipse", icon: <PanoramaFishEye fontSize="small" />, hint: "Drag to draw an ellipse" },
   { tool: "quad", label: "Quadrants", icon: <WindowOutlined fontSize="small" />, hint: "Click or tap to place the quadrant centre" },
+  { tool: "hinge", label: "Hinged quadrants", icon: <GridGoldenratioOutlined fontSize="small" />, hint: "" },
+  { tool: "divider", label: "Divider", icon: <SplitscreenOutlined fontSize="small" />, hint: "Drag a line to split the plot in two" },
   { tool: "range", label: "Range", icon: <Straighten fontSize="small" />, hint: "Drag across the histogram" },
 ];
 
-type Draft = { start?: [number, number]; points: [number, number][]; cursor?: [number, number] };
+type Draft = { start?: [number, number]; points: [number, number][]; cursor?: [number, number]; staggered?: boolean[] };
+const ARMS = ["up", "right", "down", "left"] as const;
+
+/** Arm for a click at p: through the centre, or (staggered) straight and offset to pass through p. */
+function armAt(k: number, centre: [number, number], p: [number, number], staggered: boolean): Arm {
+  if (!staggered) return { origin: centre, end: p };
+  return k % 2 === 0 ? { origin: [p[0], centre[1]], end: p } : { origin: [centre[0], p[1]], end: p };
+}
+const pointsInto = (k: number, a: Arm) => [a.end[1] > a.origin[1], a.end[0] > a.origin[0], a.end[1] < a.origin[1], a.end[0] < a.origin[0]][k]!;
 
 export function PlotPanel(props: {
   sample: Sample | undefined;
@@ -62,6 +74,7 @@ export function PlotPanel(props: {
   onEditMatrix: () => void;
   onGate: (g: Gate) => void;
   onQuadrants: (g: Record<Quadrant, Gate>) => void;
+  onDivider: (g: [Gate, Gate], labels: [string, string]) => void;
   onOpen: () => void;
   onLoadDemo: () => void;
 }) {
@@ -92,6 +105,8 @@ export function PlotPanel(props: {
     }
   };
   const [polygonPoints, setPolygonPoints] = useState(0); // mirrors draft.points.length for the Finish/Cancel bar
+  const [hingeStep, setHingeStep] = useState(0); // clicks placed for hinged quadrants, for the hint
+  const hingeShift = useRef(false);
   const frameRef = useRef<Frame | null>(null);
   const draft = useRef<Draft>({ points: [] });
   const { mode, systemMode } = useColorScheme();
@@ -161,6 +176,21 @@ export function PlotPanel(props: {
     }
     const preview = previewGate();
     if (preview) drawGate(f, preview, "", true);
+    // Hinged quadrant arms and divider lines preview as open two-point polygons.
+    const line = (a: [number, number], b: [number, number]) => yDim && drawGate(f, { kind: "polygon", x: xDim, y: yDim, points: [a, b] }, "", true);
+    const d = draft.current;
+    if (tool === "divider" && d.start && d.cursor) line(d.start, d.cursor);
+    if (tool === "hinge" && d.points[0]) {
+      const c = d.points[0];
+      d.points.slice(1).forEach((p, k) => {
+        const a = armAt(k, c, p, !!d.staggered?.[k]);
+        line(a.origin, a.end);
+      });
+      if (d.cursor && d.points.length < 5) {
+        const a = armAt(d.points.length - 1, c, d.cursor, hingeShift.current);
+        line(a.origin, a.end);
+      }
+    }
     // xDim/yDim are rebuilt every render, so compare them by value via their JSON.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, overlaying, normalise, props.overlayLayers, JSON.stringify(xDim), JSON.stringify(yDim)]);
@@ -192,6 +222,7 @@ export function PlotPanel(props: {
   useEffect(() => {
     draft.current = { points: [] };
     setPolygonPoints(0);
+    setHingeStep(0);
     draw();
   }, [tool]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,7 +230,8 @@ export function PlotPanel(props: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         draft.current = { points: [] };
-    setPolygonPoints(0);
+        setPolygonPoints(0);
+        setHingeStep(0);
         draw();
       }
     };
@@ -216,6 +248,20 @@ export function PlotPanel(props: {
   };
 
   const finish = () => {
+    if (tool === "divider" && yDim) {
+      const { start: a, cursor: b } = draft.current;
+      draft.current = { points: [] };
+      draw();
+      const f = frameRef.current!;
+      if (!a || !b || Math.hypot((b[0] - a[0]) * f.w, (b[1] - a[1]) * f.h) < 8) return;
+      // Name the sides the way people read the line: above/below for flat lines, left/right for steep ones.
+      const flat = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]);
+      const [l, r] = divider(xDim, yDim, a, b);
+      const firstIsLeft = flat ? b[0] > a[0] : b[1] < a[1]; // the gate on the left of a to b is above (flat) or left (steep)
+      if (flat) props.onDivider(firstIsLeft ? [l, r] : [r, l], ["above", "below"]);
+      else props.onDivider(firstIsLeft ? [r, l] : [l, r], ["left", "right"]);
+      return;
+    }
     const g = previewGate();
     draft.current = { points: [] };
     setPolygonPoints(0);
@@ -234,6 +280,34 @@ export function PlotPanel(props: {
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!sample || tool === "none") return;
     const p = toUnits(e);
+    if (tool === "divider" && !yDim) {
+      props.onDivider(histogramDivider(xDim, p[0]), ["low", "high"]);
+      return;
+    }
+    if (tool === "hinge" && yDim) {
+      const d = draft.current;
+      const k = d.points.length - 1;
+      if (k >= 0) {
+        const arm = armAt(k, d.points[0]!, p, e.shiftKey);
+        if (!pointsInto(k, arm)) return; // each arm has to point into its own half
+        d.staggered = [...(d.staggered ?? []), e.shiftKey];
+      }
+      d.points.push(p);
+      d.cursor = p;
+      if (d.points.length === 5) {
+        const c = d.points[0]!;
+        const [up, right, down, left] = d.points.slice(1).map((q, i) => armAt(i, c, q, !!d.staggered![i])) as [Arm, Arm, Arm, Arm];
+        const gates = hingedQuadrants(xDim, yDim, c, { up, right, down, left });
+        draft.current = { points: [] };
+        setHingeStep(0);
+        draw();
+        if (gates) props.onQuadrants(gates);
+        return;
+      }
+      setHingeStep(d.points.length);
+      draw();
+      return;
+    }
     if (tool === "quad") {
       if (yDim) props.onQuadrants(quadrants(xDim, yDim, p[0], p[1]));
       return;
@@ -263,6 +337,7 @@ export function PlotPanel(props: {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    hingeShift.current = e.shiftKey;
     const d = draft.current;
     if (tool === "none" || (!d.start && !d.points.length)) return;
     d.cursor = toUnits(e);
@@ -278,6 +353,7 @@ export function PlotPanel(props: {
   const cancelDraft = () => {
     draft.current = { points: [] };
     setPolygonPoints(0);
+    setHingeStep(0);
     draw();
   };
 
@@ -309,7 +385,9 @@ export function PlotPanel(props: {
 
   const names = sample.names;
   const parentName = parent ? populations.find((p) => p.id === parent)?.name : "All events";
-  const hint = TOOLS.find((t) => t.tool === tool)?.hint;
+  const hint = tool === "hinge"
+    ? hingeStep === 0 ? "Click the quadrant centre" : `Click where the ${ARMS[hingeStep - 1]} arm passes. Hold Shift to keep it straight and offset (staggered)`
+    : TOOLS.find((t) => t.tool === tool)?.hint;
   const select = (label: string, value: string, onChange: (v: string) => void, options: [string, string][], disabled = false) => (
     <TextField select size="small" label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} sx={{ minWidth: 112 }}>
       {options.map(([v, t]) => <MenuItem key={v} value={v}>{t}</MenuItem>)}
@@ -381,7 +459,7 @@ export function PlotPanel(props: {
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 1.5, flexWrap: "wrap" }} useFlexGap>
         <ToggleButtonGroup size="small" exclusive value={tool} onChange={(_, v: Tool | null) => v && props.onTool(v)} aria-label="Gate tools">
           {TOOLS.map((t) => {
-            const disabled = histogram ? !["none", "range"].includes(t.tool) : t.tool === "range";
+            const disabled = histogram ? !["none", "range", "divider"].includes(t.tool) : t.tool === "range";
             return (
               <ToggleButton key={t.tool} value={t.tool} aria-label={t.label} disabled={disabled} sx={{ px: 1.25 }}>
                 <Tooltip title={t.label}><Box component="span" sx={{ display: "inline-flex" }}>{t.icon}</Box></Tooltip>

@@ -6,7 +6,7 @@ import type { Population } from "../core/populations";
 import { evaluateFormula, isDerivedParameter, parseFormula, type DerivedParameter } from "../core/formula";
 import { arcsinh, hyperlog, linear, log, logicle, type TransformSpec } from "../core/transforms";
 
-export type Tool = "none" | "rect" | "polygon" | "ellipse" | "quad" | "range";
+export type Tool = "none" | "rect" | "polygon" | "ellipse" | "quad" | "hinge" | "divider" | "range";
 export const HIST = "__histogram__";
 export const DEMO_NAME = "Demo sample (synthetic)";
 
