@@ -4,7 +4,8 @@ import type { Gate, Quadrant } from "../core/gates";
 
 export type Naming =
   | { kind: "gate"; gate: Gate; defaultName: string }
-  | { kind: "quad"; gates: Record<Quadrant, Gate>; defaultName: string };
+  | { kind: "quad"; gates: Record<Quadrant, Gate>; defaultName: string }
+  | { kind: "split"; gates: [Gate, Gate]; labels: [string, string]; defaultName: string };
 
 export function NameDialog(props: { naming: Naming | null; onCancel: () => void; onConfirm: (name: string) => void }) {
   const { naming, onCancel, onConfirm } = props;
@@ -13,6 +14,7 @@ export function NameDialog(props: { naming: Naming | null; onCancel: () => void;
     if (naming) setValue(naming.defaultName);
   }, [naming]);
   const quad = naming?.kind === "quad";
+  const split = naming?.kind === "split" ? naming : undefined;
   const name = value.trim();
 
   return (
@@ -31,14 +33,14 @@ export function NameDialog(props: { naming: Naming | null; onCancel: () => void;
         },
       }}
     >
-      <DialogTitle>{quad ? "Name the quadrants" : "Name the population"}</DialogTitle>
+      <DialogTitle>{quad ? "Name the quadrants" : split ? "Name the two populations" : "Name the population"}</DialogTitle>
       <DialogContent>
         <TextField
           autoFocus
           fullWidth
           margin="dense"
-          label={quad ? "Prefix" : "Name"}
-          helperText={quad ? "Quadrants are named Prefix1 to Prefix4 with their marker signs" : undefined}
+          label={quad || split ? "Prefix" : "Name"}
+          helperText={quad ? "Quadrants are named Prefix1 to Prefix4 with their marker signs" : split ? `Named “${name} ${split.labels[0]}” and “${name} ${split.labels[1]}”` : undefined}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -47,7 +49,7 @@ export function NameDialog(props: { naming: Naming | null; onCancel: () => void;
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="contained" disabled={!name}>
-          {quad ? "Add quadrants" : "Add population"}
+          {quad ? "Add quadrants" : split ? "Add populations" : "Add population"}
         </Button>
       </DialogActions>
     </Dialog>
