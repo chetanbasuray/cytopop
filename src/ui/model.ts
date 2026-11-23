@@ -27,6 +27,21 @@ export interface Template {
   samples?: string[]; // file names open when a workspace was saved
   derived?: DerivedParameter[];
   groups?: Record<string, string>; // sample file name to group name
+  keywordColumns?: string[]; // FCS keywords shown next to samples and in the statistics export
+  annotations?: Annotations;
+}
+
+export interface Annotations {
+  columns: string[]; // user-defined columns, in order
+  values: Record<string, Record<string, string>>; // sample file name to column to value
+}
+
+const isStrings = (v: unknown): v is Record<string, string> =>
+  !!v && typeof v === "object" && Object.values(v).every((x) => typeof x === "string");
+
+function isAnnotations(a: unknown): a is Annotations {
+  return !!a && typeof a === "object" && Array.isArray((a as Annotations).columns) && (a as Annotations).columns.every((c) => typeof c === "string") &&
+    !!(a as Annotations).values && typeof (a as Annotations).values === "object" && Object.values((a as Annotations).values).every(isStrings);
 }
 
 export function isTemplate(t: unknown): t is Template {
@@ -34,7 +49,9 @@ export function isTemplate(t: unknown): t is Template {
     ((t as Template).spillover === undefined || isSpillover((t as Template).spillover)) &&
     ((t as Template).samples === undefined || (Array.isArray((t as Template).samples) && (t as Template).samples!.every((n) => typeof n === "string"))) &&
     ((t as Template).derived === undefined || (Array.isArray((t as Template).derived) && (t as Template).derived!.every(isDerivedParameter))) &&
-    ((t as Template).groups === undefined || (!!(t as Template).groups && typeof (t as Template).groups === "object" && Object.values((t as Template).groups!).every((g) => typeof g === "string")));
+    ((t as Template).groups === undefined || isStrings((t as Template).groups)) &&
+    ((t as Template).keywordColumns === undefined || (Array.isArray((t as Template).keywordColumns) && (t as Template).keywordColumns!.every((k) => typeof k === "string"))) &&
+    ((t as Template).annotations === undefined || isAnnotations((t as Template).annotations));
 }
 
 /** Sets a sample's parameter names to its file's parameters followed by the derived ones. */
