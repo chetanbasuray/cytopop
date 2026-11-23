@@ -1,3 +1,4 @@
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -55,6 +56,7 @@ export function TopBar(props: {
   canExport: boolean;
   onSaveTemplate: () => void;
   onLoadTemplate: (file: File) => void;
+  onCheckSettings: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -109,6 +111,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><FileOpenOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Load gating template</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onCheckSettings();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><FactCheckOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Check settings across samples</ListItemText>
           </MenuItem>
         </Menu>
         <input

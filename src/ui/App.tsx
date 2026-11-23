@@ -14,6 +14,8 @@ import { spilloverFor } from "../core/compensation";
 import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
 import { MatrixDialog } from "./MatrixDialog";
+import { SettingsDialog } from "./SettingsDialog";
+import { compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
@@ -59,6 +61,7 @@ export function App() {
   const [useComp, setUseComp] = useState(true);
   const [editedSpill, setEditedSpill] = useState<Spillover | undefined>(stored?.spillover);
   const [editingMatrix, setEditingMatrix] = useState(false);
+  const [checkingSettings, setCheckingSettings] = useState(false);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -207,6 +210,14 @@ export function App() {
     }
   };
 
+  const settingRows = checkingSettings ? compareSettings(samples.map((s) => s.file)) : [];
+  // Parameters behind the current axes, gates and statistics: differences there change results.
+  const usedParams = new Set([x, ...(histogram ? [] : [y]), ...statChannels, ...populations.flatMap((p) =>
+    p.gate.kind === "boolean" ? [] : p.gate.kind === "range" ? [p.gate.x.param] : [p.gate.x.param, p.gate.y.param])]);
+  const exportSettings = () =>
+    download("cytopop-settings.csv", toCsv(["Parameter", "Setting", ...samples.map((s) => s.name)],
+      settingRows.map((r) => [r.parameter ?? "Sample", r.setting, ...r.values.map((v) => (v === undefined ? "" : r.setting === "Spillover matrix" ? "present" : v))])), "text/csv");
+
   const exportCsv = () => {
     const rows: (string | number)[][] = [];
     const picked = STATS.filter((st) => statKeys.includes(st.key));
@@ -268,6 +279,7 @@ export function App() {
         canExport={samples.length > 0}
         onSaveTemplate={saveTemplate}
         onLoadTemplate={loadTemplate}
+        onCheckSettings={() => setCheckingSettings(true)}
       />
       <SampleBar
         samples={samples}
@@ -352,6 +364,15 @@ export function App() {
       </Box>
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
+      <SettingsDialog
+        open={checkingSettings}
+        sampleNames={samples.map((s) => s.name)}
+        rows={settingRows}
+        used={usedParams}
+        label={(n) => (sample ? paramLabel(sample, n) : n)}
+        onExport={exportSettings}
+        onClose={() => setCheckingSettings(false)}
+      />
       <MatrixDialog
         open={editingMatrix}
         spill={sample ? spilloverFor(sample.names, sample.file.spillover, editedSpill) : undefined}
