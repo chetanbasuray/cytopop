@@ -4,6 +4,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import FunctionsOutlined from "@mui/icons-material/FunctionsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -67,6 +68,7 @@ export function TopBar(props: {
   onExportEvents: () => void;
   onDerive: () => void;
   onGrid: () => void;
+  onControls: () => void;
   canGrid: boolean;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -177,6 +179,16 @@ export function TopBar(props: {
           >
             <ListItemIcon><GridViewOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>All parameter pairs</ListItemText>
+          </MenuItem>
+          <MenuItem
+            disabled={!props.canGrid}
+            onClick={() => {
+              props.onControls();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><TuneOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Compensation from controls</ListItemText>
           </MenuItem>
         </Menu>
         <input

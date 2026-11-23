@@ -12,7 +12,7 @@ import {
   rangeScale, withDerived,
 } from "./model";
 import { Footer } from "./Footer";
-import { spilloverFor } from "../core/compensation";
+import { spilloverFor, spilloverFromControls, type ControlEvents } from "../core/compensation";
 import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
 import { MatrixDialog } from "./MatrixDialog";
@@ -32,6 +32,7 @@ import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { GridDialog } from "./GridDialog";
+import { ControlsDialog, type ControlPick } from "./ControlsDialog";
 import type { DerivedParameter } from "../core/formula";
 import { StatsPanel } from "./StatsPanel";
 import { TopBar } from "./TopBar";
@@ -86,6 +87,7 @@ export function App() {
   const [derived, setDerived] = useState<DerivedParameter[]>(stored?.derived ?? []);
   const [deriving, setDeriving] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -281,6 +283,20 @@ export function App() {
     }
     pinScales();
     setNaming(null);
+  };
+
+  /** Medians come from the controls' uncompensated events; clean-up gates are evaluated as the user sees them. */
+  const calculateSpillover = (detectors: string[], controls: ControlPick[], negative: ControlPick) => {
+    const events = (pick: ControlPick): ControlEvents => {
+      const s = samples.find((q) => q.id === pick.sampleId);
+      if (!s) throw new Error("Choose a sample for every control");
+      const base = columns(s, false);
+      if (pick.populationId === "all") return { names: s.names, data: base };
+      const shown = columns(s, useComp, editedSpill, derived);
+      const mask = evaluate(populations, s.names, shown, s.file.parameters.map((q) => q.range)).get(pick.populationId);
+      return { names: s.names, data: base, mask };
+    };
+    return spilloverFromControls(detectors, controls.map(events), events(negative));
   };
 
   /** Sets or clears (t undefined) a population's threshold; for quadrants, every quadrant sharing that split moves together. */
@@ -491,6 +507,7 @@ export function App() {
         onExportEvents={() => setExportingEvents(true)}
         onDerive={() => setDeriving(true)}
         onGrid={() => setGridOpen(true)}
+        onControls={() => setControlsOpen(true)}
         canGrid={!!sample}
       />
       <SampleBar
@@ -601,6 +618,24 @@ export function App() {
             setThresholding(null);
           }}
           onClose={() => setThresholding(null)}
+        />
+      )}
+      {controlsOpen && sample && (
+        <ControlsDialog
+          open
+          detectors={(editedSpill ?? sample.file.spillover)?.parameters.filter((p) => sample.names.includes(p)) ??
+            sample.file.parameters.map((p) => p.name).filter((n) => !/^(FSC|SSC|Time)/i.test(n))}
+          label={(n) => paramLabel(sample, n)}
+          samples={samples.map((s) => ({ id: s.id, name: s.name }))}
+          populations={populations.map((p) => ({ id: p.id, path: pathOf(populations, p.id) }))}
+          calculate={calculateSpillover}
+          onApply={(spill) => {
+            setEditedSpill(spill);
+            setUseComp(true);
+            setControlsOpen(false);
+            setToast({ severity: "info", message: `Applied a spillover matrix calculated from ${spill.parameters.length} controls. Adjust it with the matrix button next to Compensate` });
+          }}
+          onClose={() => setControlsOpen(false)}
         />
       )}
       {gridOpen && sample && cols && (
