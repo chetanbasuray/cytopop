@@ -15,7 +15,8 @@ import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
 import { MatrixDialog } from "./MatrixDialog";
 import { SettingsDialog } from "./SettingsDialog";
-import { compareSettings } from "../core/qc";
+import { CleaningDialog } from "./CleaningDialog";
+import { cleaned, compareSettings } from "../core/qc";
 import { NameDialog, type Naming } from "./NameDialog";
 import { PlotPanel } from "./PlotPanel";
 import { Populations } from "./Populations";
@@ -62,6 +63,7 @@ export function App() {
   const [editedSpill, setEditedSpill] = useState<Spillover | undefined>(stored?.spillover);
   const [editingMatrix, setEditingMatrix] = useState(false);
   const [checkingSettings, setCheckingSettings] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const [statRaw, setStatChannels] = useState<string[]>([]);
   const [statKeys, setStatKeys] = useState<StatKey[]>(loadStatKeys);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -101,7 +103,7 @@ export function App() {
   const evaluated = useMemo(() => {
     if (!sample || !cols) return { masks: undefined, error: undefined };
     try {
-      return { masks: evaluate(populations, sample.names, cols), error: undefined };
+      return { masks: evaluate(populations, sample.names, cols, sample.file.parameters.map((q) => q.range)), error: undefined };
     } catch (err) {
       return { masks: undefined, error: (err as Error).message };
     }
@@ -210,10 +212,21 @@ export function App() {
     }
   };
 
+  const cleaningRows = cleaning ? samples.map((s) => ({ name: s.name, report: cleaned(s.names, columns(s, useComp, editedSpill), s.file.parameters.map((q) => q.range)).report })) : [];
+  const cleanApplied = populations.some((p) => p.gate.kind === "clean");
+  const addStable = () => {
+    // Existing top-level gates move under Stable events, so the flagged events drop out of the analysis.
+    const stable = newId(), flagged = newId();
+    setPopulations((ps) => [
+      { id: stable, name: "Stable events", parentId: null, gate: { kind: "clean" } },
+      { id: flagged, name: "Flagged events", parentId: null, gate: { kind: "boolean", op: "not", of: [stable] } },
+      ...ps.map((p) => (p.parentId === null ? { ...p, parentId: stable } : p)),
+    ]);
+  };
   const settingRows = checkingSettings ? compareSettings(samples.map((s) => s.file)) : [];
   // Parameters behind the current axes, gates and statistics: differences there change results.
   const usedParams = new Set([x, ...(histogram ? [] : [y]), ...statChannels, ...populations.flatMap((p) =>
-    p.gate.kind === "boolean" ? [] : p.gate.kind === "range" ? [p.gate.x.param] : [p.gate.x.param, p.gate.y.param])]);
+    p.gate.kind === "boolean" || p.gate.kind === "clean" ? [] : p.gate.kind === "range" ? [p.gate.x.param] : [p.gate.x.param, p.gate.y.param])]);
   const exportSettings = () =>
     download("cytopop-settings.csv", toCsv(["Parameter", "Setting", ...samples.map((s) => s.name)],
       settingRows.map((r) => [r.parameter ?? "Sample", r.setting, ...r.values.map((v) => (v === undefined ? "" : r.setting === "Spillover matrix" ? "present" : v))])), "text/csv");
@@ -225,7 +238,7 @@ export function App() {
       const data = columns(s, useComp, editedSpill);
       let masks: Map<string, Uint8Array>;
       try {
-        masks = evaluate(populations, s.names, data);
+        masks = evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range));
       } catch (err) {
         rows.push([s.name, `Error: ${(err as Error).message}`]);
         continue;
@@ -280,6 +293,7 @@ export function App() {
         onSaveTemplate={saveTemplate}
         onLoadTemplate={loadTemplate}
         onCheckSettings={() => setCheckingSettings(true)}
+        onClean={() => setCleaning(true)}
       />
       <SampleBar
         samples={samples}
@@ -364,6 +378,7 @@ export function App() {
       </Box>
       <Footer status={status} />
       <NameDialog naming={naming} onCancel={() => setNaming(null)} onConfirm={confirmName} />
+      <CleaningDialog open={cleaning} rows={cleaningRows} applied={cleanApplied} onApply={addStable} onClose={() => setCleaning(false)} />
       <SettingsDialog
         open={checkingSettings}
         sampleNames={samples.map((s) => s.name)}

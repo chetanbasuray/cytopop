@@ -1,10 +1,16 @@
 import { applyGate, type Gate } from "./gates";
+import { cleaned } from "./qc";
 
 export interface Population {
   id: string;
   name: string;
   parentId: string | null; // null = child of "All events"
-  gate: Gate | BooleanGate;
+  gate: Gate | BooleanGate | CleanGate;
+}
+
+/** Events recorded while acquisition was stable (see flagUnstable). */
+export interface CleanGate {
+  kind: "clean";
 }
 
 export type BooleanOp = "and" | "or" | "not";
@@ -124,7 +130,7 @@ export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelSt
 }
 
 /** Evaluates every population against a sample. Parents are evaluated before children. */
-export function evaluate(populations: Population[], names: string[], data: Float32Array[]): Map<string, Uint8Array> {
+export function evaluate(populations: Population[], names: string[], data: Float32Array[], ranges: (number | undefined)[] = []): Map<string, Uint8Array> {
   const masks = new Map<string, Uint8Array>();
   const byId = new Map(populations.map((p) => [p.id, p]));
   const visit = (p: Population, stack: Set<string>): Uint8Array => {
@@ -145,6 +151,9 @@ export function evaluate(populations: Population[], names: string[], data: Float
         return visit(q, stack);
       });
       mask = combine(g.op, inputs, data[0]?.length ?? 0);
+      if (within) for (let i = 0; i < mask.length; i++) mask[i]! &= within[i]!;
+    } else if (g.kind === "clean") {
+      mask = cleaned(names, data, ranges).stable.slice();
       if (within) for (let i = 0; i < mask.length; i++) mask[i]! &= within[i]!;
     } else mask = applyGate(g, names, data, within);
     masks.set(p.id, mask);

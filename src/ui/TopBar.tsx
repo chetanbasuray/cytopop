@@ -1,3 +1,4 @@
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
@@ -57,6 +58,7 @@ export function TopBar(props: {
   onSaveTemplate: () => void;
   onLoadTemplate: (file: File) => void;
   onCheckSettings: () => void;
+  onClean: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -120,6 +122,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><FactCheckOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Check settings across samples</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onClean();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><CleaningServicesOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Find unstable events</ListItemText>
           </MenuItem>
         </Menu>
         <input
