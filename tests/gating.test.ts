@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyGate, GateError, pointInPolygon, quadrants, type Dimension } from "../src/core/gates";
-import { channelStats, count, evaluate, pathOf, populationStats, toCsv, STATS, type Population } from "../src/core/populations";
+import { channelStats, count, evaluate, pathOf, populationStats, toCsv, EMPTY_STATS, type Population } from "../src/core/populations";
 
 const lin = { kind: "linear", min: 0, max: 100 } as const;
 const X: Dimension = { param: "X", scale: lin };
@@ -83,8 +83,8 @@ test("channelStats all-zero mask returns NaN for every key", () => {
   const values = new Float32Array([1, 2, 3]);
   const mask = new Uint8Array([0, 0, 0]);
   const s = channelStats(values, mask);
-  for (const stat of STATS) {
-    expect(s[stat.key]).toBeNaN();
+  for (const key of Object.keys(EMPTY_STATS) as (keyof typeof EMPTY_STATS)[]) {
+    expect(s[key]).toBeNaN();
   }
 });
 

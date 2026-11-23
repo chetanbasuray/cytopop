@@ -38,24 +38,36 @@ export interface PopulationStats {
   count: number;
   percentParent: number;
   percentTotal: number;
+  percentGrandparent: number;
 }
 
-export type StatKey = "median" | "mean" | "geoMean" | "sd" | "cv" | "rsd" | "rcv" | "p5" | "p25" | "p75" | "p95";
-export const STATS: { key: StatKey; label: string }[] = [
-  { key: "median", label: "Median" },
-  { key: "mean", label: "Mean" },
-  { key: "geoMean", label: "Geo. mean" },
-  { key: "sd", label: "SD" },
-  { key: "cv", label: "CV %" },
-  { key: "rsd", label: "Robust SD" },
-  { key: "rcv", label: "Robust CV %" },
-  { key: "p5", label: "5th pct" },
-  { key: "p25", label: "25th pct" },
-  { key: "p75", label: "75th pct" },
-  { key: "p95", label: "95th pct" },
+export type ChannelStatKey = "median" | "mean" | "geoMean" | "sd" | "cv" | "rsd" | "rcv" | "p5" | "p25" | "p75" | "p95" | "mode" | "hpcv";
+export type StatKey = ChannelStatKey | "si" | "pg" | "perUl" | "r";
+export const STATS: { key: StatKey; label: string; per: "channel" | "population" }[] = [
+  { key: "pg", label: "% grandparent", per: "population" },
+  { key: "perUl", label: "Events per µl", per: "population" },
+  { key: "r", label: "Pearson r", per: "population" },
+  { key: "median", label: "Median", per: "channel" },
+  { key: "mean", label: "Mean", per: "channel" },
+  { key: "geoMean", label: "Geo. mean", per: "channel" },
+  { key: "sd", label: "SD", per: "channel" },
+  { key: "cv", label: "CV %", per: "channel" },
+  { key: "rsd", label: "Robust SD", per: "channel" },
+  { key: "rcv", label: "Robust CV %", per: "channel" },
+  { key: "p5", label: "5th pct", per: "channel" },
+  { key: "p25", label: "25th pct", per: "channel" },
+  { key: "p75", label: "75th pct", per: "channel" },
+  { key: "p95", label: "95th pct", per: "channel" },
+  { key: "mode", label: "Mode", per: "channel" },
+  { key: "hpcv", label: "Half-peak CV %", per: "channel" },
+  { key: "si", label: "Stain index", per: "channel" },
 ];
 export const DEFAULT_STATS: StatKey[] = ["median", "mean", "cv"];
-export type ChannelStats = Record<StatKey, number>;
+export type ChannelStats = Record<ChannelStatKey, number>;
+
+export const EMPTY_STATS: ChannelStats = {
+  median: NaN, mean: NaN, geoMean: NaN, sd: NaN, cv: NaN, rsd: NaN, rcv: NaN, p5: NaN, p25: NaN, p75: NaN, p95: NaN, mode: NaN, hpcv: NaN,
+};
 
 function percentile(sorted: Float64Array, p: number): number {
   const n = sorted.length;
@@ -78,9 +90,7 @@ export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelSt
     }
   }
   if (n === 0) {
-    return {
-      median: NaN, mean: NaN, geoMean: NaN, sd: NaN, cv: NaN, rsd: NaN, rcv: NaN, p5: NaN, p25: NaN, p75: NaN, p95: NaN,
-    };
+    return EMPTY_STATS;
   }
   const sorted = picked.slice(0, n);
   sorted.sort(); // typed arrays sort numerically; a comparator is several times slower
@@ -126,7 +136,53 @@ export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelSt
 
   const rcv = median === 0 ? NaN : (100 * rsd) / Math.abs(median);
 
-  return { median, mean, geoMean, sd, cv, rsd, rcv, p5, p25, p75, p95 };
+  const lo = percentile(sorted, 0.5);
+  const hi = percentile(sorted, 99.5);
+
+  let mode: number;
+  let hpcv: number;
+
+  if (hi <= lo) {
+    mode = median;
+    hpcv = NaN;
+  } else {
+    const bins = 256;
+    const binWidth = (hi - lo) / bins;
+    const counts = new Uint32Array(bins);
+    for (let i = 0; i < n; i++) {
+      const v = sorted[i]!;
+      if (v >= lo && v <= hi) {
+        const b = Math.min(bins - 1, Math.floor((v - lo) / binWidth));
+        counts[b]!++;
+      }
+    }
+    const smoothed = new Float64Array(bins);
+    for (let i = 0; i < bins; i++) {
+      let sum = 0;
+      let c = 0;
+      if (i > 0) { sum += counts[i - 1]!; c++; }
+      sum += counts[i]!; c++;
+      if (i < bins - 1) { sum += counts[i + 1]!; c++; }
+      smoothed[i] = sum / c;
+    }
+    let peakIdx = 0;
+    let peakVal = smoothed[0]!;
+    for (let i = 1; i < bins; i++) {
+      if (smoothed[i]! > peakVal) {
+        peakVal = smoothed[i]!;
+        peakIdx = i;
+      }
+    }
+    mode = lo + (peakIdx + 0.5) * binWidth;
+    let left = peakIdx;
+    while (left > 0 && smoothed[left - 1]! >= peakVal / 2) left--;
+    let right = peakIdx;
+    while (right < bins - 1 && smoothed[right + 1]! >= peakVal / 2) right++;
+    const fwhm = (right - left + 1) * binWidth;
+    hpcv = mode === 0 ? NaN : 100 * (fwhm / 2.3548) / Math.abs(mode);
+  }
+
+  return { median, mean, geoMean, sd, cv, rsd, rcv, p5, p25, p75, p95, mode, hpcv };
 }
 
 /** Evaluates every population against a sample. Parents are evaluated before children. */
@@ -177,9 +233,21 @@ export function pathOf(populations: Population[], id: string): string {
 }
 
 export function populationStats(populations: Population[], masks: Map<string, Uint8Array>, total: number): PopulationStats[] {
+  const byId = new Map(populations.map((p) => [p.id, p]));
   return populations.map((p) => {
     const c = count(masks.get(p.id)!);
     const parentCount = p.parentId === null ? total : count(masks.get(p.parentId)!);
+    let grandparentCount: number;
+    if (p.parentId === null) {
+      grandparentCount = NaN;
+    } else {
+      const parent = byId.get(p.parentId)!;
+      if (parent.parentId === null) {
+        grandparentCount = total;
+      } else {
+        grandparentCount = count(masks.get(parent.parentId)!);
+      }
+    }
     return {
       id: p.id,
       name: p.name,
@@ -187,6 +255,7 @@ export function populationStats(populations: Population[], masks: Map<string, Ui
       count: c,
       percentParent: parentCount ? (100 * c) / parentCount : 0,
       percentTotal: total ? (100 * c) / total : 0,
+      percentGrandparent: Number.isNaN(grandparentCount) ? NaN : grandparentCount ? (100 * c) / grandparentCount : 0,
     };
   });
 }
@@ -198,4 +267,89 @@ function csvCell(v: string | number): string {
 
 export function toCsv(header: string[], rows: (string | number)[][]): string {
   return [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\n") + "\n";
+}
+
+export function stainIndex(pos: ChannelStats, neg: ChannelStats): number {
+  if (neg.rsd === 0 || !Number.isFinite(neg.rsd)) return NaN;
+  return (pos.median - neg.median) / (2 * neg.rsd);
+}
+
+export function pearson(x: Float32Array, y: Float32Array, mask?: Uint8Array): number {
+  const n = x.length;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    if (!mask || mask[i]!) count++;
+  }
+  if (count < 2) return NaN;
+
+  let sumX = 0, sumY = 0;
+  for (let i = 0; i < n; i++) {
+    if (!mask || mask[i]!) {
+      sumX += x[i]!;
+      sumY += y[i]!;
+    }
+  }
+  const meanX = sumX / count;
+  const meanY = sumY / count;
+
+  let varX = 0, varY = 0, covXY = 0;
+  for (let i = 0; i < n; i++) {
+    if (!mask || mask[i]!) {
+      const dx = x[i]! - meanX;
+      const dy = y[i]! - meanY;
+      varX += dx * dx;
+      varY += dy * dy;
+      covXY += dx * dy;
+    }
+  }
+
+  if (varX === 0 || varY === 0) return NaN;
+  return covXY / Math.sqrt(varX * varY);
+}
+
+export function volumeMicrolitres(keywords: Record<string, string>): number | undefined {
+  const vol = keywords["$VOL"];
+  if (!vol) return undefined;
+  const v = Number(vol);
+  if (Number.isFinite(v) && v > 0) return v / 1000;
+  return undefined;
+}
+
+export function splitKeys(keys: StatKey[]): { population: StatKey[]; channel: StatKey[] } {
+  const population: StatKey[] = [];
+  const channel: StatKey[] = [];
+  for (const k of keys) {
+    const entry = STATS.find((s) => s.key === k);
+    if (!entry) continue;
+    if (entry.per === "population") population.push(k);
+    else channel.push(k);
+  }
+  return { population, channel };
+}
+
+export function statValues(keys: StatKey[], row: { cols: (Float32Array | undefined)[]; mask?: Uint8Array; count: number; percentGrandparent: number; volumeUl?: number; negative?: ChannelStats[] }): number[] {
+  const { population: popKeys, channel: chanKeys } = splitKeys(keys);
+  const result: number[] = [];
+
+  for (const k of popKeys) {
+    if (k === "pg") result.push(row.percentGrandparent);
+    else if (k === "perUl") result.push(row.volumeUl ? row.count / row.volumeUl : NaN);
+    else if (k === "r") {
+      const cols = row.cols;
+      if (cols.length >= 2 && cols[0] && cols[1]) {
+        result.push(pearson(cols[0], cols[1], row.mask));
+      } else {
+        result.push(NaN);
+      }
+    }
+  }
+
+  row.cols.forEach((col, j) => {
+    const c = col ? channelStats(col, row.mask) : EMPTY_STATS;
+    for (const k of chanKeys) {
+      const neg = row.negative?.[j];
+      result.push(k === "si" ? (neg ? stainIndex(c, neg) : NaN) : c[k as ChannelStatKey]);
+    }
+  });
+  return result;
 }

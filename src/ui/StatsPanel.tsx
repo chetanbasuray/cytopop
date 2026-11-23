@@ -1,6 +1,6 @@
 import { MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import { useMemo } from "react";
-import { DEFAULT_STATS, STATS, channelStats, type ChannelStats, type PopulationStats, type StatKey } from "../core/populations";
+import { DEFAULT_STATS, EMPTY_STATS, STATS, channelStats, splitKeys, statValues, type PopulationStats, type StatKey } from "../core/populations";
 import { paramLabel, type Sample } from "./model";
 import { MONO } from "./theme";
 
@@ -16,13 +16,22 @@ export function StatsPanel(props: {
   onChannels: (c: string[]) => void;
   statKeys: StatKey[];
   onStatKeys: (k: StatKey[]) => void;
+  negative: string; // population id used as the stain index negative, or "none"
+  onNegative: (id: string) => void;
+  volumeUl: number | undefined;
 }) {
-  const { sample, cols, masks, stats, channels, statKeys } = props;
+  const { sample, cols, masks, stats, channels, statKeys, volumeUl } = props;
+  const negative = stats.some((p) => p.id === props.negative) ? props.negative : "none";
+  const split = splitKeys(statKeys);
+  const label = (k: StatKey) => STATS.find((s) => s.key === k)?.label;
 
   const rows = useMemo(() => {
     if (!sample || !cols) return [];
     const channelCols = channels.map((ch) => cols[sample.names.indexOf(ch)]);
-    const none: ChannelStats = { median: NaN, mean: NaN, geoMean: NaN, sd: NaN, cv: NaN, rsd: NaN, rcv: NaN, p5: NaN, p25: NaN, p75: NaN, p95: NaN };
+    const negMask = negative !== "none" ? masks?.get(negative) : undefined;
+    const neg = negMask ? channelCols.map((col) => (col ? channelStats(col, negMask) : EMPTY_STATS)) : undefined;
+    const values = (count: number, percentGrandparent: number, mask?: Uint8Array) =>
+      statValues(statKeys, { cols: channelCols, mask, count, percentGrandparent, volumeUl, negative: neg });
 
     return [
       {
@@ -32,7 +41,7 @@ export function StatsPanel(props: {
         count: sample.file.eventCount,
         pp: 100,
         pt: 100,
-        c: channelCols.map((col) => (col ? channelStats(col) : none)),
+        v: values(sample.file.eventCount, NaN),
       },
       ...stats.map((p) => ({
         key: p.id,
@@ -41,10 +50,10 @@ export function StatsPanel(props: {
         count: p.count,
         pp: p.percentParent,
         pt: p.percentTotal,
-        c: channelCols.map((col) => (col && masks ? channelStats(col, masks.get(p.id)) : none)),
+        v: masks ? values(p.count, p.percentGrandparent, masks.get(p.id)) : [],
       })),
     ];
-  }, [sample, cols, masks, stats, channels]);
+  }, [sample, cols, masks, stats, channels, statKeys, negative, volumeUl]);
 
   const handleChannelsChange = (newChannels: string[]) => {
     if (newChannels.length === 0) return;
@@ -109,6 +118,14 @@ export function StatsPanel(props: {
                 </MenuItem>
               ))}
             </TextField>
+            {statKeys.includes("si") && (
+              <TextField select size="small" label="Stain index negative" value={negative} onChange={(e) => props.onNegative(e.target.value)} sx={{ minWidth: 160, maxWidth: 240 }}>
+                <MenuItem value="none">Choose a population</MenuItem>
+                {stats.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>{p.path}</MenuItem>
+                ))}
+              </TextField>
+            )}
           </>
         )}
       </Stack>
@@ -119,9 +136,9 @@ export function StatsPanel(props: {
               {channels.length > 1 ? (
                 <>
                   <TableRow>
-                    <TableCell colSpan={4} />
+                    <TableCell colSpan={4 + split.population.length} />
                     {channels.map((ch) => (
-                      <TableCell key={ch} align="center" colSpan={statKeys.length}>
+                      <TableCell key={ch} align="center" colSpan={split.channel.length}>
                         {paramLabel(sample, ch)}
                       </TableCell>
                     ))}
@@ -131,10 +148,11 @@ export function StatsPanel(props: {
                     <TableCell align="right">Count</TableCell>
                     <TableCell align="right">% parent</TableCell>
                     <TableCell align="right">% total</TableCell>
+                    {split.population.map((k) => <TableCell key={k} align="right">{label(k)}</TableCell>)}
                     {channels.map((ch) =>
-                      statKeys.map((k) => (
+                      split.channel.map((k) => (
                         <TableCell key={`${ch}-${k}`} align="right">
-                          {STATS.find((s) => s.key === k)?.label}
+                          {label(k)}
                         </TableCell>
                       ))
                     )}
@@ -146,9 +164,9 @@ export function StatsPanel(props: {
                   <TableCell align="right">Count</TableCell>
                   <TableCell align="right">% parent</TableCell>
                   <TableCell align="right">% total</TableCell>
-                  {statKeys.map((k) => (
+                  {[...split.population, ...split.channel].map((k) => (
                     <TableCell key={k} align="right">
-                      {STATS.find((s) => s.key === k)?.label}
+                      {label(k)}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -167,21 +185,31 @@ export function StatsPanel(props: {
                   <TableCell align="right" sx={num}>
                     {fmt(r.pt, 2)}
                   </TableCell>
-                  {channels.map((ch, chIdx) =>
-                    statKeys.map((k) => (
-                      <TableCell key={`${r.key}-${ch}-${k}`} align="right" sx={num}>
-                        {fmt(r.c[chIdx]![k])}
-                      </TableCell>
-                    ))
-                  )}
+                  {r.v.map((v, i) => (
+                    <TableCell key={i} align="right" sx={num}>
+                      {fmt(v, 2)}
+                    </TableCell>
+                  ))}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
-      ) : (
+      ) : null}
+      {sample && notes(statKeys, channels.map((ch) => paramLabel(sample, ch)), volumeUl, negative).map((n) => (
+        <Typography key={n} variant="body2" sx={{ color: "text.secondary", mt: 1 }}>{n}</Typography>
+      ))}
+      {sample ? null : (
         <Typography variant="body2" sx={{ color: "text.secondary" }}>Statistics appear once a sample is open</Typography>
       )}
     </Paper>
   );
+}
+
+function notes(keys: StatKey[], channels: string[], volumeUl: number | undefined, negative: string): string[] {
+  const out: string[] = [];
+  if (keys.includes("r")) out.push(channels.length >= 2 ? `Pearson r compares ${channels[0]} with ${channels[1]}` : "Pearson r needs two channels");
+  if (keys.includes("perUl") && !volumeUl) out.push("Events per µl needs the acquired volume ($VOL), which this file does not record");
+  if (keys.includes("si") && negative === "none") out.push("Stain index needs a negative population");
+  return out;
 }
