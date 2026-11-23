@@ -6,9 +6,16 @@ export interface Dimension {
   scale: TransformSpec;
 }
 
+/** A gate edge placed at a percentile of a control sample's population on that edge's parameter. */
+export interface Threshold {
+  sample: string; // file name of the control
+  population: string; // population id, or "all"
+  percentile: number;
+}
+
 export type Gate =
-  | { kind: "range"; x: Dimension; min: number; max: number }
-  | { kind: "rectangle"; x: Dimension; y: Dimension; xMin: number; xMax: number; yMin: number; yMax: number }
+  | { kind: "range"; x: Dimension; min: number; max: number; threshold?: Threshold }
+  | { kind: "rectangle"; x: Dimension; y: Dimension; xMin: number; xMax: number; yMin: number; yMax: number; xThreshold?: Threshold; yThreshold?: Threshold }
   | { kind: "polygon"; x: Dimension; y: Dimension; points: [number, number][] }
   | { kind: "ellipse"; x: Dimension; y: Dimension; cx: number; cy: number; rx: number; ry: number; angle: number };
 
@@ -26,6 +33,52 @@ export function quadrants(x: Dimension, y: Dimension, cx: number, cy: number): R
     "--": rect(lo, cx, lo, cy),
     "+-": rect(cx, hi, lo, cy),
   };
+}
+
+/** Edges at or beyond this are unbounded (quadrants use ±1e9). */
+const OPEN = 1e8;
+
+/** The one bounded edge of a half-open interval, as quadrant gates have on each axis. */
+export function splitEdge(min: number, max: number): "min" | "max" | undefined {
+  if (min > -OPEN && max >= OPEN) return "min";
+  if (max < OPEN && min <= -OPEN) return "max";
+  return undefined;
+}
+
+/** Percentile (0-100, linear interpolation) of the values where `mask` is set, ignoring NaN. */
+export function percentileOf(values: Float32Array, mask: Uint8Array | undefined, p: number): number {
+  const picked: number[] = [];
+  for (let i = 0; i < values.length; i++) if ((!mask || mask[i]) && !Number.isNaN(values[i]!)) picked.push(values[i]!);
+  if (!picked.length) return NaN;
+  const v = Float64Array.from(picked).sort();
+  const pos = (v.length - 1) * Math.min(100, Math.max(0, p)) / 100;
+  const lo = Math.floor(pos);
+  return v[lo]! + (v[Math.ceil(pos)]! - v[lo]!) * (pos - lo);
+}
+
+/**
+ * Moves threshold edges to the values `resolve` returns, in display units of the edge's dimension.
+ * A range gate's threshold is its lower edge; a quadrant rectangle's thresholds replace its bounded edge.
+ * Edges whose control is unavailable (resolve returns undefined or NaN) keep their stored position.
+ */
+export function withThresholds(gate: Gate, resolve: (t: Threshold, dim: Dimension) => number | undefined): Gate {
+  const at = (t: Threshold | undefined, dim: Dimension) => {
+    const v = t ? resolve(t, dim) : undefined;
+    return v === undefined || !Number.isFinite(v) ? undefined : v;
+  };
+  if (gate.kind === "range") {
+    const v = at(gate.threshold, gate.x);
+    return v === undefined ? gate : { ...gate, min: Math.min(v, gate.max) };
+  }
+  if (gate.kind !== "rectangle") return gate;
+  let g = gate;
+  const x = at(gate.xThreshold, gate.x);
+  const xe = splitEdge(gate.xMin, gate.xMax);
+  if (x !== undefined && xe) g = { ...g, [xe === "min" ? "xMin" : "xMax"]: x };
+  const y = at(gate.yThreshold, gate.y);
+  const ye = splitEdge(gate.yMin, gate.yMax);
+  if (y !== undefined && ye) g = { ...g, [ye === "min" ? "yMin" : "yMax"]: y };
+  return g;
 }
 
 export function pointInPolygon(px: number, py: number, points: [number, number][]): boolean {
