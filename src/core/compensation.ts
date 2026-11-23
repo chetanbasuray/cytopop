@@ -74,3 +74,55 @@ export function isSpillover(x: unknown): x is Spillover {
 export function spilloverFor(names: string[], own: Spillover | undefined, edited: Spillover | undefined): Spillover | undefined {
   return edited && edited.parameters.every((p) => names.includes(p)) ? edited : own;
 }
+
+/** Events of one sample to use in a compensation calculation: its uncompensated columns and an optional clean-up mask. */
+export interface ControlEvents {
+  names: string[];
+  data: Float32Array[];
+  mask?: Uint8Array;
+}
+
+function median(values: number[]): number {
+  if (!values.length) return NaN;
+  const v = Float64Array.from(values).sort();
+  const m = v.length >> 1;
+  return v.length % 2 ? v[m]! : (v[m - 1]! + v[m]!) / 2;
+}
+
+function picked(c: ControlEvents, col: number, keep: (e: number) => boolean = () => true): number[] {
+  const out: number[] = [];
+  const values = c.data[col]!;
+  for (let e = 0; e < values.length; e++) if ((!c.mask || c.mask[e]) && keep(e)) out.push(values[e]!);
+  return out;
+}
+
+function columnOf(c: ControlEvents, detector: string, what: string): number {
+  const i = c.names.indexOf(detector);
+  if (i < 0) throw new CompensationError(`${what} has no ${detector} parameter`);
+  return i;
+}
+
+/**
+ * Spillover matrix from single-stain controls, one per detector, and a negative (unstained or universal negative).
+ * A control's positive events are those brighter on its own detector than the negative's 99.5th percentile there.
+ * Row i is how much dye i shows up in each detector, relative to its own detector:
+ *   S[i][j] = (median of positives in j − median of negative in j) / (same on detector i).
+ */
+export function spilloverFromControls(detectors: string[], controls: ControlEvents[], negative: ControlEvents): Spillover {
+  if (controls.length !== detectors.length) throw new CompensationError("Assign one control per detector");
+  const negMedian = detectors.map((d) => median(picked(negative, columnOf(negative, d, "The negative"))));
+  const matrix = detectors.map((d, i) => {
+    const c = controls[i]!;
+    const own = columnOf(c, d, `The ${d} control`);
+    const negOwn = picked(negative, columnOf(negative, d, "The negative")).sort((a, b) => a - b);
+    const cut = negOwn[Math.min(negOwn.length - 1, Math.floor(negOwn.length * 0.995))];
+    if (cut === undefined) throw new CompensationError("The negative has no events");
+    const isPos = (e: number) => c.data[own]![e]! > cut;
+    const pos = picked(c, own, isPos);
+    // About 0.5 % of negative-like events pass the cut by chance; require clearly more than that.
+    if (pos.length < Math.max(10, 0.01 * picked(c, own).length)) throw new CompensationError(`The ${d} control has too few events brighter than the negative`);
+    const signal = median(pos) - negMedian[i]!;
+    return detectors.map((dj, j) => (i === j ? 1 : (median(picked(c, columnOf(c, dj, `The ${d} control`), isPos)) - negMedian[j]!) / signal));
+  });
+  return { parameters: [...detectors], matrix };
+}
