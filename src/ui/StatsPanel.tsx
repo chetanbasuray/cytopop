@@ -5,6 +5,8 @@ import { paramLabel, type Sample } from "./model";
 import { MONO } from "./theme";
 
 const num = { fontFamily: MONO, fontSize: 13, fontVariantNumeric: "tabular-nums" } as const;
+// Keeps population names in view when many statistics make the table scroll sideways.
+const sticky = { position: "sticky", left: 0, zIndex: 1, bgcolor: "background.paper" } as const;
 const fmt = (v: number, d = 1) => (Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: d }) : "–");
 
 export function StatsPanel(props: {
@@ -24,6 +26,7 @@ export function StatsPanel(props: {
   const negative = stats.some((p) => p.id === props.negative) ? props.negative : "none";
   const split = splitKeys(statKeys);
   const label = (k: StatKey) => STATS.find((s) => s.key === k)?.label;
+  const many = channels.length > 1; // one row per channel under each population
 
   const rows = useMemo(() => {
     if (!sample || !cols) return [];
@@ -133,65 +136,43 @@ export function StatsPanel(props: {
         <TableContainer>
           <Table size="small" aria-label="Population statistics" sx={{ "& th, & td": { px: 1 }, "& th:first-of-type, & td:first-of-type": { pl: 0 } }}>
             <TableHead>
-              {channels.length > 1 ? (
-                <>
-                  <TableRow>
-                    <TableCell colSpan={4 + split.population.length} />
-                    {channels.map((ch) => (
-                      <TableCell key={ch} align="center" colSpan={split.channel.length}>
-                        {paramLabel(sample, ch)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>Population</TableCell>
-                    <TableCell align="right">Count</TableCell>
-                    <TableCell align="right">% parent</TableCell>
-                    <TableCell align="right">% total</TableCell>
-                    {split.population.map((k) => <TableCell key={k} align="right">{label(k)}</TableCell>)}
-                    {channels.map((ch) =>
-                      split.channel.map((k) => (
-                        <TableCell key={`${ch}-${k}`} align="right">
-                          {label(k)}
-                        </TableCell>
-                      ))
-                    )}
-                  </TableRow>
-                </>
-              ) : (
-                <TableRow>
-                  <TableCell>Population</TableCell>
-                  <TableCell align="right">Count</TableCell>
-                  <TableCell align="right">% parent</TableCell>
-                  <TableCell align="right">% total</TableCell>
-                  {[...split.population, ...split.channel].map((k) => (
-                    <TableCell key={k} align="right">
-                      {label(k)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )}
+              <TableRow>
+                <TableCell sx={sticky}>Population</TableCell>
+                <TableCell align="right">Count</TableCell>
+                <TableCell align="right">% parent</TableCell>
+                <TableCell align="right">% total</TableCell>
+                {split.population.map((k) => <TableCell key={k} align="right">{label(k)}</TableCell>)}
+                {many && <TableCell>Channel</TableCell>}
+                {split.channel.map((k) => <TableCell key={k} align="right">{label(k)}</TableCell>)}
+              </TableRow>
             </TableHead>
             <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.key} hover>
-                  <TableCell sx={{ "&&": { pl: r.depth * 2 } }}>{r.name}</TableCell>
-                  <TableCell align="right" sx={num}>
-                    {r.count.toLocaleString()}
-                  </TableCell>
-                  <TableCell align="right" sx={num}>
-                    {fmt(r.pp, 2)}
-                  </TableCell>
-                  <TableCell align="right" sx={num}>
-                    {fmt(r.pt, 2)}
-                  </TableCell>
-                  {r.v.map((v, i) => (
-                    <TableCell key={i} align="right" sx={num}>
-                      {fmt(v, 2)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
+              {rows.map((r) => {
+                // statValues gives population statistics first, then each channel's statistics in turn.
+                const pop = r.v.slice(0, split.population.length);
+                const per = split.channel.length;
+                const span = many ? channels.length : 1;
+                const last = { "& td.sub": { borderBottom: 0 } }; // only channel cells; the spanning population cells keep their divider
+                return channels.map((ch, c) => (
+                  <TableRow key={`${r.key}-${ch}`} hover sx={many && c < channels.length - 1 ? last : undefined}>
+                    {c === 0 && (
+                      <>
+                        <TableCell rowSpan={span} sx={{ ...sticky, verticalAlign: "top", "&&": { pl: r.depth * 2 } }}>{r.name}</TableCell>
+                        <TableCell rowSpan={span} align="right" sx={{ ...num, verticalAlign: "top" }}>{r.count.toLocaleString()}</TableCell>
+                        <TableCell rowSpan={span} align="right" sx={{ ...num, verticalAlign: "top" }}>{fmt(r.pp, 2)}</TableCell>
+                        <TableCell rowSpan={span} align="right" sx={{ ...num, verticalAlign: "top" }}>{fmt(r.pt, 2)}</TableCell>
+                        {pop.map((v, i) => (
+                          <TableCell key={i} rowSpan={span} align="right" sx={{ ...num, verticalAlign: "top" }}>{fmt(v, 2)}</TableCell>
+                        ))}
+                      </>
+                    )}
+                    {many && <TableCell className="sub" sx={{ color: "text.secondary" }}>{paramLabel(sample, ch)}</TableCell>}
+                    {r.v.slice(pop.length + c * per, pop.length + (c + 1) * per).map((v, i) => (
+                      <TableCell key={i} className="sub" align="right" sx={num}>{fmt(v, 2)}</TableCell>
+                    ))}
+                  </TableRow>
+                ));
+              })}
             </TableBody>
           </Table>
         </TableContainer>
