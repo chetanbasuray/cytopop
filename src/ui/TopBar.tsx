@@ -2,6 +2,7 @@ import IosShareOutlined from "@mui/icons-material/IosShareOutlined";
 import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import FunctionsOutlined from "@mui/icons-material/FunctionsOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -63,6 +64,7 @@ export function TopBar(props: {
   onClean: () => void;
   onTrack: () => void;
   onExportEvents: () => void;
+  onDerive: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -153,6 +155,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><IosShareOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Export a population's events</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onDerive();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><FunctionsOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Derived parameters</ListItemText>
           </MenuItem>
         </Menu>
         <input

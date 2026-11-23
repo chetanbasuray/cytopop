@@ -85,8 +85,8 @@ export function channelStats(values: Float32Array, mask?: Uint8Array): ChannelSt
   const picked = new Float64Array(nTotal);
   let n = 0;
   for (let i = 0; i < nTotal; i++) {
-    if (!mask || mask[i]!) {
-      picked[n++] = values[i]!;
+    if ((!mask || mask[i]!) && !Number.isNaN(values[i]!)) {
+      picked[n++] = values[i]!; // derived parameters are NaN where undefined (e.g. division by zero)
     }
   }
   if (n === 0) {
