@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyGate, GateError, pointInPolygon, quadrants, type Dimension } from "../src/core/gates";
-import { channelStats, count, evaluate, pathOf, populationStats, toCsv, EMPTY_STATS, type Population } from "../src/core/populations";
+import { channelStats, count, evaluate, pathOf, populationStats, toCsv, withOverrides, EMPTY_STATS, type Population } from "../src/core/populations";
 
 const lin = { kind: "linear", min: 0, max: 100 } as const;
 const X: Dimension = { param: "X", scale: lin };
@@ -115,4 +115,19 @@ test("Boolean populations", () => {
   expect(() => run("and", ["x"])).toThrow();
   expect(() => run("or", ["x", "gone"])).toThrow();
   expect(() => run("or", ["x", "b"])).toThrow();
+});
+
+test("a sample's adjusted gates replace the shared ones only for that sample", () => {
+  const x = { param: "FSC-A", scale: { kind: "linear" as const, min: 0, max: 1 } };
+  const shared: Population[] = [
+    { id: "a", name: "A", parentId: null, gate: { kind: "range", x, min: 0.2, max: 0.8 } },
+    { id: "b", name: "B", parentId: "a", gate: { kind: "boolean", op: "not", of: ["a"] } },
+  ];
+  const own = { kind: "range" as const, x, min: 0.3, max: 0.9 };
+  expect(withOverrides(shared, undefined)).toBe(shared);
+  expect(withOverrides(shared, {})).toBe(shared);
+  const mine = withOverrides(shared, { a: own, b: own, gone: own });
+  expect(mine[0]!.gate).toEqual(own);
+  expect(mine[1]!.gate.kind).toBe("boolean"); // only drawn gates can be adjusted
+  expect(shared[0]!.gate).not.toEqual(own);
 });
