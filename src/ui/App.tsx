@@ -11,7 +11,7 @@ import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, compareCou
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
-  type Annotations, type Sample, type Template, type Tool,
+  type Annotations, type Sample, type Template, type TemplateRule, type Tool,
   rangeScale, withDerived,
 } from "./model";
 import { Footer } from "./Footer";
@@ -19,6 +19,8 @@ import { spilloverFor, spilloverFromControls, type ControlEvents } from "../core
 import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
 import { ConcatenateDialog } from "./ConcatenateDialog";
+import { RulesDialog } from "./RulesDialog";
+import { matchRules } from "../core/rules";
 import { concatenate } from "../core/concatenate";
 import { MatrixDialog } from "./MatrixDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -49,11 +51,23 @@ import { TopBar } from "./TopBar";
 
 const STORE_KEY = "cytopop.template.v1";
 const STATS_KEY = "cytopop.stats.v1";
+const RULES_KEY = "cytopop.rules.v1";
+
+const validStatKeys = (raw: unknown): StatKey[] => (Array.isArray(raw) ? STATS.map((s) => s.key).filter((k) => raw.includes(k)) : []);
+
+function loadRules(): TemplateRule[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(RULES_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((r): r is TemplateRule => typeof r?.id === "string" && typeof r?.pattern === "string" && isTemplate(r?.template) && Array.isArray(r?.statKeys)) : [];
+  } catch {
+    return [];
+  }
+}
 
 function loadStatKeys(): StatKey[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(STATS_KEY) ?? "null");
-    const keys = Array.isArray(raw) ? STATS.map((s) => s.key).filter((k) => raw.includes(k)) : [];
+    const keys = validStatKeys(raw);
     return keys.length ? keys : DEFAULT_STATS;
   } catch {
     return DEFAULT_STATS;
@@ -122,6 +136,9 @@ export function App() {
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
   const [concatenating, setConcatenating] = useState(false);
+  const [rules, setRules] = useState<TemplateRule[]>(loadRules);
+  const [editingRules, setEditingRules] = useState(false);
+  const [justOpened, setJustOpened] = useState<string[]>([]);
   const [toast, setToast] = useState<Toast | null>(null);
   const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -217,6 +234,14 @@ export function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(RULES_KEY, JSON.stringify(rules));
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [rules]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STATS_KEY, JSON.stringify(statKeys));
     } catch {
       /* per-viewer convenience only */
@@ -281,16 +306,19 @@ export function App() {
 
   const openFiles = useCallback(async (files: FileList | File[]) => {
     const errors: string[] = [];
+    const opened: string[] = [];
     // shortcut: parses on the main thread; move to a Web Worker if very large files freeze the UI.
     for (const file of Array.from(files)) {
       try {
         const bytes = await file.arrayBuffer();
         addSample(file.name, parseFcs(bytes), bytes);
+        opened.push(file.name);
       } catch (err) {
         errors.push(`${file.name}: ${err instanceof FcsError ? err.message : String(err)}`);
       }
     }
     if (errors.length) setToast({ severity: "error", message: `Could not open ${errors.join("; ")}` });
+    if (opened.length) setJustOpened(opened);
   }, []);
 
   useEffect(() => {
@@ -536,22 +564,39 @@ export function App() {
     });
   };
 
+  const fromTemplate = (t: Template): Gating => ({
+    ...current(),
+    populations: t.populations,
+    scales: { ...scales, ...t.scales },
+    spillover: t.spillover,
+    derived: t.derived ?? [],
+    ...(t.groups ? { groups: t.groups } : {}),
+    ...(t.keywordColumns ? { keywordCols: t.keywordColumns } : {}),
+    ...(t.annotations ? { annotations: t.annotations } : {}),
+    overrides: t.overrides ?? {}, // a gating template carries only the shared gates
+  });
+
+  // Files opened together are gated with the one rule they all match, or the user is told why not.
+  useEffect(() => {
+    if (!justOpened.length || !rules.length) return;
+    const { rule, report } = matchRules(justOpened, rules);
+    if (rule) {
+      applyBulk(fromTemplate(rule.template), () => {
+        const keys = validStatKeys(rule.statKeys);
+        if (keys.length) setStatKeys(keys);
+        setToast({ severity: "info", message: `Applied the rule ${rule.pattern} to ${justOpened.length} file${justOpened.length === 1 ? "" : "s"}; Undo restores the previous gating` });
+      });
+    } else {
+      setImportReport({ title: "No template rule applied", summary: "Nothing was applied, because the opened files do not all match one rule:", lines: report });
+    }
+  }, [justOpened]);
+
   const loadTemplate = async (file: File) => {
     try {
       if (/\.wsp$/i.test(file.name)) return loadWsp(file, await file.text());
       const t: unknown = JSON.parse(await file.text());
       if (!isTemplate(t)) throw new Error("This file is not a CytoPop workspace or gating template");
-      const next: Gating = {
-        ...current(),
-        populations: t.populations,
-        scales: { ...scales, ...t.scales },
-        spillover: t.spillover,
-        derived: t.derived ?? [],
-        ...(t.groups ? { groups: t.groups } : {}),
-        ...(t.keywordColumns ? { keywordCols: t.keywordColumns } : {}),
-        ...(t.annotations ? { annotations: t.annotations } : {}),
-        overrides: t.overrides ?? {}, // a gating template carries only the shared gates
-      };
+      const next = fromTemplate(t);
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
       proposeBulk(`Load ${file.name}?`, next, () => setToast(missing.length
@@ -712,6 +757,7 @@ export function App() {
         onSaveGating={saveGating}
         onSampleTable={() => setSampleTableData(statTable())}
         onLoadTemplate={loadTemplate}
+        onRules={() => setEditingRules(true)}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
         onTrack={() => setTracking(true)}
@@ -959,6 +1005,17 @@ export function App() {
         onChange={setEditedSpill}
         onRestore={() => setEditedSpill(undefined)}
         onClose={() => setEditingMatrix(false)}
+      />
+      <RulesDialog
+        open={editingRules}
+        rules={rules}
+        canSave={populations.length > 0}
+        onAdd={(pattern) => setRules((r) => [...r, {
+          id: newId("r"), pattern, statKeys,
+          template: { populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}) },
+        }])}
+        onRemove={(id) => setRules((r) => r.filter((x) => x.id !== id))}
+        onClose={() => setEditingRules(false)}
       />
       <ConcatenateDialog
         open={concatenating}

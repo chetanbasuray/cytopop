@@ -32,6 +32,14 @@ export interface Template {
   overrides?: Record<string, Record<string, Gate>>; // sample file name to population id to that sample's own gate
 }
 
+/** Gating applied by itself when every newly opened file's name matches `pattern`. */
+export interface TemplateRule {
+  id: string;
+  pattern: string;
+  template: Template;
+  statKeys: string[];
+}
+
 export interface Annotations {
   columns: string[]; // user-defined columns, in order
   values: Record<string, Record<string, string>>; // sample file name to column to value
