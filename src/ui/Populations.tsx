@@ -1,4 +1,5 @@
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
+import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutlineOutlined";
 import Redo from "@mui/icons-material/RedoOutlined";
 import Undo from "@mui/icons-material/UndoOutlined";
@@ -25,12 +26,15 @@ export function Populations(props: {
   onCombine: () => void;
   onUndo?: () => void; // undefined when there is nothing to undo
   onRedo?: () => void;
+  adjusted: string[]; // populations whose gate is adjusted for the shown sample
+  onResetAdjustment: (id: string) => void;
 }) {
   const { populations, stats } = props;
 
   const node = (id: string | null, name: string, figure: string, depth: number): React.ReactNode => {
     const kids = populations.filter((p) => p.parentId === id);
     const pop = id ? populations.find((p) => p.id === id) : undefined;
+    const adjusted = !!id && props.adjusted.includes(id);
     return (
       <Box component="li" key={id ?? "all"} sx={{ listStyle: "none", minWidth: 0 }}>
         <Box sx={{ display: "flex", alignItems: "center", "&:hover .del, & .del:focus-visible": { opacity: 1 } }}>
@@ -38,12 +42,12 @@ export function Populations(props: {
             selected={props.parent === id}
             onClick={() => props.onSelectPopulation(id)}
             sx={{ ...rowSx, pl: 1.5 + depth * 2, gap: 1, minWidth: 0 }}
-            title={[name, pop && thresholdText(pop.gate)].filter(Boolean).join(" · ")}
+            title={[name, pop && thresholdText(pop.gate), adjusted && "Adjusted for this sample"].filter(Boolean).join(" · ")}
           >
             {id && <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: 0.5, border: 2, borderColor: "gate.main", flex: "none" }} />}
             <ListItemText
               primary={name}
-              secondary={pop ? thresholdText(pop.gate) || undefined : undefined}
+              secondary={[pop && thresholdText(pop.gate), adjusted && "Adjusted for this sample"].filter(Boolean).join(" · ") || undefined}
               slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } }, secondary: { noWrap: true, sx: { fontSize: 12 } } }}
               sx={{ my: 0, minWidth: 0 }}
             />
@@ -59,6 +63,13 @@ export function Populations(props: {
                 sx={{ ml: 0.5, transition: "opacity 120ms", "@media (hover: hover) and (pointer: fine)": { opacity: 0 } }}
               >
                 <PercentOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {id && adjusted && (
+            <Tooltip title="Use the shared gate again">
+              <IconButton size="small" aria-label={`Reset ${name} to the shared gate`} onClick={() => props.onResetAdjustment(id)} sx={{ ml: 0.5 }}>
+                <RestartAltOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
           )}

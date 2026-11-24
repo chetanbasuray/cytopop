@@ -1,7 +1,7 @@
 import { compensate, isSpillover, spilloverFor } from "../core/compensation";
 import type { Spillover } from "../core/fcs";
 import type { FcsFile } from "../core/fcs";
-import type { Dimension } from "../core/gates";
+import type { Dimension, Gate } from "../core/gates";
 import type { Population } from "../core/populations";
 import { evaluateFormula, isDerivedParameter, parseFormula, type DerivedParameter } from "../core/formula";
 import { arcsinh, hyperlog, linear, log, logicle, type TransformSpec } from "../core/transforms";
@@ -29,6 +29,7 @@ export interface Template {
   groups?: Record<string, string>; // sample file name to group name
   keywordColumns?: string[]; // FCS keywords shown next to samples and in the statistics export
   annotations?: Annotations;
+  overrides?: Record<string, Record<string, Gate>>; // sample file name to population id to that sample's own gate
 }
 
 export interface Annotations {
@@ -38,6 +39,10 @@ export interface Annotations {
 
 const isStrings = (v: unknown): v is Record<string, string> =>
   !!v && typeof v === "object" && Object.values(v).every((x) => typeof x === "string");
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const isOverrides = (o: unknown): boolean =>
+  isObject(o) && Object.values(o).every((gates) => isObject(gates) && Object.values(gates).every((g) => isObject(g) && typeof g.kind === "string"));
 
 function isAnnotations(a: unknown): a is Annotations {
   return !!a && typeof a === "object" && Array.isArray((a as Annotations).columns) && (a as Annotations).columns.every((c) => typeof c === "string") &&
@@ -51,7 +56,8 @@ export function isTemplate(t: unknown): t is Template {
     ((t as Template).derived === undefined || (Array.isArray((t as Template).derived) && (t as Template).derived!.every(isDerivedParameter))) &&
     ((t as Template).groups === undefined || isStrings((t as Template).groups)) &&
     ((t as Template).keywordColumns === undefined || (Array.isArray((t as Template).keywordColumns) && (t as Template).keywordColumns!.every((k) => typeof k === "string"))) &&
-    ((t as Template).annotations === undefined || isAnnotations((t as Template).annotations));
+    ((t as Template).annotations === undefined || isAnnotations((t as Template).annotations)) &&
+    ((t as Template).overrides === undefined || isOverrides((t as Template).overrides));
 }
 
 /** Sets a sample's parameter names to its file's parameters followed by the derived ones. */

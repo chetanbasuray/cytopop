@@ -8,6 +8,15 @@ export interface Population {
   gate: Gate | BooleanGate | CleanGate;
 }
 
+/** Populations as one sample sees them: gates adjusted for that sample (population id to gate) replace the shared ones. */
+export function withOverrides(populations: Population[], overrides: Record<string, Gate> | undefined): Population[] {
+  if (!overrides || !Object.keys(overrides).length) return populations;
+  return populations.map((p) => {
+    const g = overrides[p.id];
+    return g && p.gate.kind !== "boolean" && p.gate.kind !== "clean" ? { ...p, gate: g } : p;
+  });
+}
+
 /** Events recorded while acquisition was stable (see flagUnstable). */
 export interface CleanGate {
   kind: "clean";

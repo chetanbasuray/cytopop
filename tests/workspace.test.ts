@@ -20,3 +20,10 @@ test("workspaces may carry keyword columns and annotation columns", () => {
   expect(isTemplate({ populations: [], scales: {}, annotations: { columns: ["Donor"], values: { "a.fcs": { Donor: 1 } } } })).toBe(false);
   expect(isTemplate({ populations: [], scales: {}, annotations: { values: {} } })).toBe(false);
 });
+
+test("workspaces may carry per-sample gate adjustments", () => {
+  const gate = { kind: "range", x: { param: "FSC-A", scale: { kind: "linear", min: 0, max: 1 } }, min: 0.2, max: 0.8 };
+  expect(isTemplate({ populations: [], scales: {}, overrides: { "a.fcs": { p1: gate } } })).toBe(true);
+  expect(isTemplate({ populations: [], scales: {}, overrides: { "a.fcs": { p1: "wide" } } })).toBe(false);
+  expect(isTemplate({ populations: [], scales: {}, overrides: { "a.fcs": [] } })).toBe(false);
+});

@@ -77,6 +77,8 @@ export function PlotPanel(props: {
   onEditMatrix: () => void;
   onGate: (g: Gate) => void;
   onEditGate: (id: string, gate: Gate) => void;
+  adjustOne: boolean; // gate edits apply to this sample only
+  onAdjustOne: (on: boolean) => void;
   onQuadrants: (g: Record<Quadrant, Gate>) => void;
   onDivider: (g: [Gate, Gate], labels: [string, string]) => void;
   onOpen: () => void;
@@ -644,6 +646,9 @@ export function PlotPanel(props: {
           <IconButton size="small" aria-label="Gate from typed values" onClick={() => setTyping(true)}>
             <KeyboardOutlined fontSize="small" />
           </IconButton>
+        </Tooltip>
+        <Tooltip title="Gate edits change only this sample; the other samples keep the shared gate">
+          <FormControlLabel control={<Switch size="small" checked={props.adjustOne} onChange={(_, v) => props.onAdjustOne(v)} />} label="This sample only" sx={{ ml: 0, mr: 0 }} />
         </Tooltip>
         <Typography variant="caption" sx={{ color: "text.secondary", flex: "1 1 160px" }}>{hint}</Typography>
         {hidden > 0 && (

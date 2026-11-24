@@ -7,7 +7,7 @@ import { linkSibling } from "../core/gate-edit";
 import { fromSpec } from "../core/transforms";
 import { readWsp } from "../core/wsp";
 import { writeWsp } from "../core/wsp-write";
-import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
+import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, withOverrides, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
@@ -98,6 +98,8 @@ export function App() {
   const [keywordCols, setKeywordCols] = useState<string[]>(stored?.keywordColumns ?? []);
   const [annotations, setAnnotations] = useState<Annotations>(stored?.annotations ?? { columns: [], values: {} });
   const [editingMeta, setEditingMeta] = useState(false);
+  const [overrides, setOverrides] = useState<Record<string, Record<string, Gate>>>(stored?.overrides ?? {});
+  const [adjustOne, setAdjustOne] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -146,6 +148,9 @@ export function App() {
   }, [rawPopulations, samples, useComp, editedSpill, derived]);
   const [thresholding, setThresholding] = useState<string | null>(null);
   const sample = samples.find((s) => s.id === active);
+  const popsFor = (s: Sample) => withOverrides(populations, overrides[s.name]);
+  const samplePops = sample ? popsFor(sample) : populations;
+  const adjusted = sample ? populations.filter((p) => overrides[sample.name]?.[p.id]).map((p) => p.id) : [];
   const names = sample?.names ?? [];
   const x = names.includes(xRaw) ? xRaw : (names.find((n) => /^FSC-A/i.test(n)) ?? names[0] ?? "");
   const y = yRaw === HIST || names.includes(yRaw) ? yRaw : (names.find((n) => /^SSC-A/i.test(n)) ?? names[1] ?? names[0] ?? "");
@@ -182,11 +187,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations]);
+  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations, overrides]);
 
   useEffect(() => {
     try {
@@ -200,14 +205,14 @@ export function App() {
   const evaluated = useMemo(() => {
     if (!sample || !cols) return { masks: undefined, error: undefined };
     try {
-      return { masks: evaluate(populations, sample.names, cols, sample.file.parameters.map((q) => q.range)), error: undefined };
+      return { masks: evaluate(samplePops, sample.names, cols, sample.file.parameters.map((q) => q.range)), error: undefined };
     } catch (err) {
       return { masks: undefined, error: (err as Error).message };
     }
-  }, [sample, cols, populations]);
+  }, [sample, cols, samplePops]);
   const stats = useMemo(
-    () => (sample && evaluated.masks ? populationStats(populations, evaluated.masks, sample.file.eventCount) : []),
-    [sample, evaluated.masks, populations],
+    () => (sample && evaluated.masks ? populationStats(samplePops, evaluated.masks, sample.file.eventCount) : []),
+    [sample, evaluated.masks, samplePops],
   );
 
   // ---------- samples ----------
@@ -316,7 +321,7 @@ export function App() {
       const base = columns(s, false);
       if (pick.populationId === "all") return { names: s.names, data: base };
       const shown = columns(s, useComp, editedSpill, derived);
-      const mask = evaluate(populations, s.names, shown, s.file.parameters.map((q) => q.range)).get(pick.populationId);
+      const mask = evaluate(popsFor(s), s.names, shown, s.file.parameters.map((q) => q.range)).get(pick.populationId);
       return { names: s.names, data: base, mask };
     };
     return spilloverFromControls(detectors, controls.map(events), events(negative));
@@ -344,8 +349,13 @@ export function App() {
     });
   };
 
+  /** Saves only the shared gating (no samples, groups, metadata or per-sample adjustments), to reuse on other experiments. */
+  const saveGating = () =>
+    download("cytopop-gating.json", JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}) } satisfies Template, null, 2), "application/json");
+
   /** Replaces a population's gate. Quadrants, dividers and hinged quadrants that shared the moved edge or point move with it. */
-  const editGate = (id: string, gate: Gate) =>
+  const editGate = (id: string, gate: Gate) => {
+    if (adjustOne && sample) return adjustGate(sample, id, gate);
     setPopulations((all) => {
       const target = populations.find((p) => p.id === id);
       const before = target?.gate;
@@ -356,6 +366,29 @@ export function App() {
         const linked = linkSibling(before, gate, p.gate);
         return linked === p.gate ? p : { ...p, gate: linked };
       });
+    });
+  };
+
+  /** Stores a gate for one sample only; linked quadrants and dividers are adjusted for that sample too. */
+  const adjustGate = (s: Sample, id: string, gate: Gate) => {
+    const pops = popsFor(s);
+    const target = pops.find((p) => p.id === id);
+    const before = target?.gate;
+    if (!target || !before || before.kind === "boolean" || before.kind === "clean") return;
+    const mine: Record<string, Gate> = { ...overrides[s.name], [id]: gate };
+    for (const p of pops) {
+      if (p.id === id || p.parentId !== target.parentId || p.gate.kind === "boolean" || p.gate.kind === "clean") continue;
+      const linked = linkSibling(before, gate, p.gate);
+      if (JSON.stringify(linked) !== JSON.stringify(p.gate)) mine[p.id] = linked;
+    }
+    setOverrides((o) => ({ ...o, [s.name]: mine }));
+  };
+
+  const resetAdjustment = (name: string, id: string) =>
+    setOverrides((o) => {
+      const mine = Object.fromEntries(Object.entries(o[name] ?? {}).filter(([k]) => k !== id));
+      const others = Object.fromEntries(Object.entries(o).filter(([k]) => k !== name));
+      return Object.keys(mine).length ? { ...others, [name]: mine } : others;
     });
 
   const removePopulation = (id: string) => {
@@ -374,7 +407,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const saveWsp = () => {
@@ -399,7 +432,7 @@ export function App() {
       if (!input.length) throw new Error(skipped.length ? "None of the open files fit these gates" : "Open at least one FCS file to save a .wsp workspace");
       const { xml, warnings } = writeWsp({ populations, scales: Object.fromEntries(input.flatMap((s) => s.file.parameters).map((q) => [q.name, scaleFor(q.name)])), compensated: useComp, samples: input });
       download("cytopop-workspace.wsp", xml, "application/xml");
-      const lines = [...skipped, ...warnings];
+      const lines = [...skipped, ...warnings, ...(Object.keys(overrides).length ? ["Gates adjusted for single samples were saved as the shared gates; save a CytoPop workspace to keep them."] : [])];
       if (lines.length) setImportReport({ title: "Workspace saved with changes", summary: `Saved ${populations.length} populations for ${input.length} samples. Not everything could be saved exactly:`, lines });
     } catch (err) {
       setToast({ severity: "error", message: (err as Error).message });
@@ -433,6 +466,7 @@ export function App() {
       if (t.groups) setGroups(t.groups);
       if (t.keywordColumns) setKeywordCols(t.keywordColumns);
       if (t.annotations) setAnnotations(t.annotations);
+      setOverrides(t.overrides ?? {}); // a gating template carries only the shared gates
       setParent(null);
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
@@ -456,7 +490,7 @@ export function App() {
       const col = data[s.names.indexOf(channel)];
       if (!col) return NaN;
       try {
-        const mask = populationId !== "all" ? evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range)).get(populationId) : undefined;
+        const mask = populationId !== "all" ? evaluate(popsFor(s), s.names, data, s.file.parameters.map((q) => q.range)).get(populationId) : undefined;
         return channelStats(col, mask)[stat];
       } catch {
         return NaN;
@@ -481,7 +515,7 @@ export function App() {
       if (pid !== "all") {
         if (!masksOf.has(s.id)) {
           try {
-            masksOf.set(s.id, evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range)));
+            masksOf.set(s.id, evaluate(popsFor(s), s.names, data, s.file.parameters.map((q) => q.range)));
           } catch {
             masksOf.set(s.id, undefined);
           }
@@ -491,7 +525,7 @@ export function App() {
       }
       return [{ label: `${s.name} · ${pid === "all" ? "All events" : pathOf(populations, pid)}`, xs, mask }];
     });
-  }, [overlayKeys, samples, populations, useComp, editedSpill, x]);
+  }, [overlayKeys, samples, populations, overrides, useComp, editedSpill, x]);
 
   const exportEvents = (populationId: string, format: "csv" | "fcs") => {
     if (!sample || !cols) return;
@@ -531,7 +565,7 @@ export function App() {
       const data = columns(s, useComp, editedSpill, derived);
       let masks: Map<string, Uint8Array>;
       try {
-        masks = evaluate(populations, s.names, data, s.file.parameters.map((q) => q.range));
+        masks = evaluate(popsFor(s), s.names, data, s.file.parameters.map((q) => q.range));
       } catch (err) {
         rows.push([s.name, ...groupCol(s), `Error: ${(err as Error).message}`]);
         continue;
@@ -543,7 +577,7 @@ export function App() {
       const values = (count: number, percentGrandparent: number, mask?: Uint8Array) =>
         statValues(statKeys, { cols, mask, count, percentGrandparent, volumeUl, negative: neg });
       rows.push([s.name, ...groupCol(s), "All events", s.file.eventCount, 100, 100, ...values(s.file.eventCount, NaN)]);
-      for (const p of populationStats(populations, masks, s.file.eventCount)) {
+      for (const p of populationStats(popsFor(s), masks, s.file.eventCount)) {
         rows.push([s.name, ...groupCol(s), p.path, p.count, p.percentParent, p.percentTotal, ...values(p.count, p.percentGrandparent, masks.get(p.id))]);
       }
     }
@@ -586,6 +620,7 @@ export function App() {
         canExport={samples.length > 0}
         onSaveTemplate={saveTemplate}
         onSaveWsp={saveWsp}
+        onSaveGating={saveGating}
         onLoadTemplate={loadTemplate}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
@@ -663,12 +698,14 @@ export function App() {
       >
         <Box sx={{ gridArea: "pops", minWidth: 0 }}>
           <Populations
-            populations={populations}
+            populations={samplePops}
             stats={stats}
             totalEvents={sample?.file.eventCount}
             parent={parent}
             onSelectPopulation={setParent}
             onRemovePopulation={removePopulation}
+            adjusted={adjusted}
+            onResetAdjustment={(id) => sample && resetAdjustment(sample.name, id)}
             onThreshold={setThresholding}
             onCombine={() => setCombining(true)}
             onUndo={history.canUndo ? history.undo : undefined}
@@ -681,7 +718,7 @@ export function App() {
             cols={cols}
             masks={evaluated.masks}
             error={evaluated.error}
-            populations={populations}
+            populations={samplePops}
             stats={stats}
             parent={parent}
             overlayOptions={overlayOptions}
@@ -705,6 +742,8 @@ export function App() {
             onEditMatrix={() => setEditingMatrix(true)}
             onGate={onGate}
             onEditGate={editGate}
+            adjustOne={adjustOne}
+            onAdjustOne={setAdjustOne}
             onQuadrants={onQuadrants}
             onDivider={onDivider}
             onOpen={() => fileInput.current?.click()}
