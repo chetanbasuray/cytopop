@@ -1,4 +1,5 @@
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
+import MergeOutlined from "@mui/icons-material/MergeOutlined";
 import LabelOutlined from "@mui/icons-material/LabelOutlined";
 import TableChartOutlined from "@mui/icons-material/TableChartOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
@@ -19,6 +20,7 @@ export function SampleBar(props: {
   onEditGroups: () => void;
   details: (s: Sample) => string; // chosen keyword and annotation values, shown after the name
   onEditMetadata: () => void;
+  onConcatenate: () => void;
 }) {
   const distinctGroups = Array.from(new Set(Object.values(props.groups).filter(Boolean))).sort();
   const hasGroups = distinctGroups.length > 0;
@@ -76,6 +78,14 @@ export function SampleBar(props: {
         sx={{ flex: "none", whiteSpace: "nowrap" }}
       >
         Metadata
+      </Button>
+      <Button
+        startIcon={<MergeOutlined />}
+        onClick={props.onConcatenate}
+        disabled={props.samples.length < 2}
+        sx={{ flex: "none", whiteSpace: "nowrap" }}
+      >
+        Concatenate
       </Button>
       <Box sx={{ display: "flex", gap: 1, overflowX: "auto", flex: 1, minWidth: 0, py: 0.5 }}>
         {filteredSamples.length > 0 ? (
