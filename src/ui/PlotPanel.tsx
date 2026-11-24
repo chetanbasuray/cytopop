@@ -22,7 +22,8 @@ import { BoundsDialog } from "./BoundsDialog";
 import type { Spillover } from "../core/fcs";
 import GridOnOutlined from "@mui/icons-material/GridOnOutlined";
 import { descendants, HIST, paramLabel, sameDim, type Sample, type Tool } from "./model";
-import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHighlight, drawHistogram, drawOverlay, frame, M, PLOT_STYLES, type Frame, type OverlayLayer, type PlotStyle } from "./plot";
+import { drawAxes, drawContour, drawDensity, dim, drawDots, drawGate, drawHandles, drawHighlight, drawHistogram, drawOverlay, frame, M, PLOT_STYLES, type Frame, type OverlayLayer, type PlotStyle } from "./plot";
+import { dragGate, hitHandle, nudge, removeVertex, type Handle, type Point } from "../core/gate-edit";
 
 const SCALES: [TransformSpec["kind"], string][] = [["linear", "Linear"], ["log", "Log"], ["logicle", "Logicle"], ["hyperlog", "Hyperlog"], ["arcsinh", "Arcsinh"]];
 
@@ -75,6 +76,7 @@ export function PlotPanel(props: {
   spill: Spillover | undefined;
   onEditMatrix: () => void;
   onGate: (g: Gate) => void;
+  onEditGate: (id: string, gate: Gate) => void;
   onQuadrants: (g: Record<Quadrant, Gate>) => void;
   onDivider: (g: [Gate, Gate], labels: [string, string]) => void;
   onOpen: () => void;
@@ -115,6 +117,20 @@ export function PlotPanel(props: {
   const { mode, systemMode } = useColorScheme();
   const scheme = mode === "system" ? systemMode : mode;
   const histogram = yDim === null;
+
+  const [selected, setSelected] = useState<string | null>(null);
+  const edit = useRef<{ id: string; handle: Handle; from: Point; start: Gate; current: Gate } | null>(null);
+  const lastVertex = useRef<number | null>(null);
+
+  const visibleGates = useCallback((): { id: string; name: string; gate: Gate }[] =>
+    populations.flatMap((p) => {
+      const g = p.gate;
+      if (p.parentId !== parent || g.kind === "boolean" || g.kind === "clean") return [];
+      const fits = g.kind === "range" ? !yDim && sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim);
+      return fits ? [{ id: p.id, name: p.name, gate: g }] : [];
+    }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [populations, parent, JSON.stringify(xDim), JSON.stringify(yDim)]);
 
   const previewGate = useCallback((): Gate | null => {
     const d = draft.current;
@@ -169,13 +185,14 @@ export function PlotPanel(props: {
       }
       drawAxes(f, xt, null, paramLabel(sample, xDim.param), "Count");
     }
-    for (const p of populations.filter((q) => q.parentId === parent)) {
+    for (const p of visibleGates()) {
       const g = p.gate;
-      if (g.kind === "boolean" || g.kind === "clean") continue;
-      const fits = g.kind === "range" ? !yDim && sameDim(g.x, xDim) : sameDim(g.x, xDim) && sameDim(g.y, yDim);
-      if (!fits) continue;
       const pct = stats.find((s) => s.id === p.id)?.percentParent;
-      drawGate(f, g, `${p.name}${pct === undefined ? "" : ` ${pct.toFixed(1)}%`}`);
+      const shown = edit.current?.id === p.id ? edit.current.current : g;
+      drawGate(f, shown, `${p.name}${pct === undefined ? "" : ` ${pct.toFixed(1)}%`}`);
+      if (p.id === selected && tool === "none") {
+        drawHandles(f, shown);
+      }
     }
     const preview = previewGate();
     if (preview) drawGate(f, preview, "", true);
@@ -196,7 +213,7 @@ export function PlotPanel(props: {
     }
     // xDim/yDim are rebuilt every render, so compare them by value via their JSON.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, overlaying, normalise, props.overlayLayers, JSON.stringify(xDim), JSON.stringify(yDim)]);
+  }, [sample, cols, masks, parent, populations, stats, previewGate, size, style, highlight, overlaying, normalise, props.overlayLayers, JSON.stringify(xDim), JSON.stringify(yDim), visibleGates, selected, tool]);
 
   // The plot is square and follows the panel width, between 320 and 680 CSS px.
   useEffect(() => {
@@ -226,6 +243,7 @@ export function PlotPanel(props: {
     draft.current = { points: [] };
     setPolygonPoints(0);
     setHingeStep(0);
+    setSelected(null);
     draw();
   }, [tool]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -280,8 +298,72 @@ export function PlotPanel(props: {
     props.onGate(g);
   };
 
+  /** Pointer tool: selects the gate under the pointer and starts dragging it or one of its handles. */
+  const startEdit = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = toUnits(e);
+    const f = frameRef.current!;
+    const px = e.pointerType === "mouse" ? 8 : 24;
+    const tol: Point = [px / f.w, px / f.h];
+
+    let hitGateId: string | null = null;
+    let hit: Handle | null = null;
+    let hitGate: Gate | undefined;
+
+    if (selected) {
+      const sg = visibleGates().find((v) => v.id === selected);
+      if (sg) {
+        const h = hitHandle(sg.gate, p, tol);
+        if (h) {
+          hitGateId = selected;
+          hit = h;
+          hitGate = sg.gate;
+        }
+      }
+    }
+
+    if (!hit) {
+      const gates = visibleGates();
+      for (let i = gates.length - 1; i >= 0; i--) {
+        const v = gates[i]!;
+        const h = hitHandle(v.gate, p, tol);
+        if (h) {
+          hitGateId = v.id;
+          hit = h;
+          hitGate = v.gate;
+          break;
+        }
+      }
+    }
+
+    if (!hit || !hitGateId || !hitGate) {
+      setSelected(null);
+      return;
+    }
+
+    setSelected(hitGateId);
+    let handleToUse = hit;
+    let gateToUse = hitGate;
+
+    if (hit.kind === "edge") {
+      const newGate = dragGate(hitGate, hit, p, p);
+      gateToUse = newGate;
+      handleToUse = { kind: "vertex", i: hit.i + 1 };
+    }
+
+    edit.current = { id: hitGateId, handle: handleToUse, from: p, start: gateToUse, current: gateToUse };
+    lastVertex.current = handleToUse.kind === "vertex" ? handleToUse.i : handleToUse.kind === "edge" ? handleToUse.i + 1 : null;
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is a nicety (keeps the drag when leaving the canvas); drawing works without it */
+    }
+    draw();
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!sample || tool === "none") return;
+    if (!sample) return;
+    if (tool === "none") return startEdit(e);
     const p = toUnits(e);
     if (tool === "divider" && !yDim) {
       props.onDivider(histogramDivider(xDim, p[0]), ["low", "high"]);
@@ -341,10 +423,41 @@ export function PlotPanel(props: {
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     hingeShift.current = e.shiftKey;
+    if (edit.current) {
+      edit.current.current = dragGate(edit.current.start, edit.current.handle, edit.current.from, toUnits(e));
+      draw();
+      return;
+    }
     const d = draft.current;
     if (tool === "none" || (!d.start && !d.points.length)) return;
     d.cursor = toUnits(e);
     draw();
+  };
+
+  const onPointerUp = () => {
+    if (edit.current) {
+      const { id, start, current } = edit.current;
+      edit.current = null;
+      if (current !== start) {
+        props.onEditGate(id, current);
+      }
+      draw();
+      return;
+    }
+    if (draft.current.start) finish();
+  };
+
+  const cancelDraft = () => {
+    draft.current = { points: [] };
+    setPolygonPoints(0);
+    setHingeStep(0);
+    edit.current = null;
+    draw();
+  };
+
+  const onPointerCancel = () => {
+    edit.current = null;
+    cancelDraft();
   };
 
   const finishPolygon = () => {
@@ -353,19 +466,57 @@ export function PlotPanel(props: {
     d.cursor = d.points[0]; // same as closing on the first point; finish() drops this trailing cursor
     finish();
   };
-  const cancelDraft = () => {
-    draft.current = { points: [] };
-    setPolygonPoints(0);
-    setHingeStep(0);
-    draw();
-  };
 
-  const onDoubleClick = () => {
+  const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool === "none" && selected) {
+      const sg = visibleGates().find((v) => v.id === selected);
+      if (sg && sg.gate.kind === "polygon") {
+        const p = toUnits(e);
+        const f = frameRef.current!;
+        const tol: Point = [12 / f.w, 12 / f.h];
+        const h = hitHandle(sg.gate, p, tol);
+        if (h && h.kind === "vertex") {
+          props.onEditGate(selected, removeVertex(sg.gate, h.i));
+          return;
+        }
+      }
+    }
     const d = draft.current;
     if (tool === "polygon" && d.points.length >= 3) {
       d.points.pop(); // the second click of the double-click added a duplicate point
       d.cursor = d.points[d.points.length - 1];
       finish();
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (tool !== "none" || !selected) return;
+    const sg = visibleGates().find((v) => v.id === selected);
+    if (!sg) return;
+
+    if (e.key === "Escape") {
+      setSelected(null);
+      return;
+    }
+
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (sg.gate.kind === "polygon" && lastVertex.current !== null) {
+        props.onEditGate(selected, removeVertex(sg.gate, lastVertex.current));
+        lastVertex.current = null;
+      }
+      return;
+    }
+
+    const step = e.shiftKey ? 0.02 : 0.005;
+    let du = 0;
+    let dv = 0;
+    if (e.key === "ArrowLeft") { du = -step; e.preventDefault(); }
+    else if (e.key === "ArrowRight") { du = step; e.preventDefault(); }
+    else if (e.key === "ArrowUp") { dv = step; e.preventDefault(); }
+    else if (e.key === "ArrowDown") { dv = -step; e.preventDefault(); }
+
+    if (du !== 0 || dv !== 0) {
+      props.onEditGate(selected, nudge(sg.gate, du, dv));
     }
   };
 
@@ -388,9 +539,17 @@ export function PlotPanel(props: {
 
   const names = sample.names;
   const parentName = parent ? populations.find((p) => p.id === parent)?.name : "All events";
-  const hint = tool === "hinge"
-    ? hingeStep === 0 ? "Click the quadrant centre" : `Click where the ${ARMS[hingeStep - 1]} arm passes. Hold Shift to keep it straight and offset (staggered)`
-    : TOOLS.find((t) => t.tool === tool)?.hint;
+  const selectedGate = selected ? visibleGates().find((v) => v.id === selected)?.gate : undefined;
+  const hasVisibleGates = visibleGates().length > 0;
+
+  const hint = tool === "none"
+    ? selectedGate ? "Drag the gate or its handles. Arrow keys nudge it. Drag a middle handle to add a polygon point; double-click a point to remove it"
+      : hasVisibleGates ? "Select a gate to move or reshape it" : ""
+    : tool === "hinge"
+      ? hingeStep === 0 ? "Click the quadrant centre" : `Click where the ${ARMS[hingeStep - 1]} arm passes. Hold Shift to keep it straight and offset (staggered)`
+      : TOOLS.find((t) => t.tool === tool)?.hint;
+
+
   const select = (label: string, value: string, onChange: (v: string) => void, options: [string, string][], disabled = false) => (
     <TextField select size="small" label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} sx={{ minWidth: 112 }}>
       {options.map(([v, t]) => <MenuItem key={v} value={v}>{t}</MenuItem>)}
@@ -417,6 +576,8 @@ export function PlotPanel(props: {
     .map((q) => `${q.name} ${stats.find((s) => s.id === q.id)?.percentParent.toFixed(1) ?? "?"}%`);
   const summary = `${histogram ? `Histogram of ${paramLabel(sample, xDim.param)}` : `${PLOT_STYLES.find(([k]) => k === style)?.[1] ?? "Density"} plot of ${paramLabel(sample, xDim.param)} against ${paramLabel(sample, yDim!.param)}`}` +
     ` for ${parentName}, ${shownCount?.toLocaleString() ?? "?"} events. ` + (gateText.length ? `Gates: ${gateText.join(", ")}.` : "No gates on these axes.");
+
+  const hasThreshold = selectedGate?.kind === "range" ? !!selectedGate.threshold : selectedGate?.kind === "rectangle" && !!(selectedGate.xThreshold || selectedGate.yThreshold);
 
   return (
     <Paper sx={{ p: 2, minWidth: 0 }}>
@@ -490,6 +651,9 @@ export function PlotPanel(props: {
             {hidden === 1 ? "1 gate is hidden because it was" : `${hidden} gates are hidden because they were`} drawn with other scale settings. Counts are unchanged
           </Typography>
         )}
+        {hasThreshold && (
+          <Typography variant="caption" sx={{ color: "warning.main", flexBasis: "100%" }}>This gate follows a control threshold. Moving it removes the threshold</Typography>
+        )}
         {tool === "polygon" && polygonPoints > 0 && (
           <Stack direction="row" spacing={1}>
             <Button size="small" onClick={cancelDraft}>Cancel</Button>
@@ -505,12 +669,14 @@ export function PlotPanel(props: {
         ref={canvasRef}
         aria-label={summary}
         role="img"
+        tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={() => draft.current.start && finish()}
+        onPointerUp={onPointerUp}
         onDoubleClick={onDoubleClick}
-        onPointerCancel={cancelDraft}
-        style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: tool === "none" ? "pan-x pan-y pinch-zoom" : "none", cursor: tool === "none" ? "default" : "crosshair" }}
+        onKeyDown={onKeyDown}
+        onPointerCancel={onPointerCancel}
+        style={{ display: "block", maxWidth: "100%", height: "auto", touchAction: tool === "none" && !selectedGate ? "pan-x pan-y pinch-zoom" : "none", cursor: tool === "none" ? (selectedGate ? "move" : "default") : "crosshair" }}
       />
       </Box>
       {typing && (

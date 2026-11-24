@@ -1,5 +1,6 @@
 import { binGrid, logLevels, marchingSquares, probabilityLevels, smooth } from "../core/contour";
 import type { Gate } from "../core/gates";
+import { handles } from "../core/gate-edit";
 import type { Transform } from "../core/transforms";
 
 export const M = { left: 60, right: 14, top: 14, bottom: 46 };
@@ -402,6 +403,29 @@ export function drawGate(f: Frame, gate: Gate, label: string, preview = false): 
     ctx.strokeText(label, ax, ay);
     ctx.fillStyle = css("--mui-palette-gate-main");
     ctx.fillText(label, ax, ay);
+  }
+  ctx.restore();
+}
+
+/** Edit handles of the selected gate: small squares in the panel colour outlined in the gate colour. */
+export function drawHandles(f: Frame, gate: Gate): void {
+  const { ctx } = f;
+  ctx.save();
+  ctx.fillStyle = css("--mui-palette-background-paper");
+  ctx.strokeStyle = css("--mui-palette-gate-main");
+  ctx.lineWidth = 1.5;
+  for (const { handle, at } of handles(gate)) {
+    const [x, y] = toPx(f, at[0], at[1]);
+    const r = handle.kind === "edge" ? 3 : 4.5; // edge midpoints add a vertex, so they are drawn smaller
+    if (handle.kind === "rotate") {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+    } else {
+      ctx.beginPath();
+      ctx.rect(x - r, y - r, 2 * r, 2 * r);
+    }
+    ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
 }
