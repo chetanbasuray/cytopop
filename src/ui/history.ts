@@ -35,5 +35,7 @@ export function useHistory<T>(initial: T) {
     redo: useCallback(() => setH(redo), []),
     canUndo: h.past.length > 0,
     canRedo: h.future.length > 0,
+    /** The value redo would restore. */
+    next: h.future[0],
   };
 }

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyGate, GateError, pointInPolygon, quadrants, type Dimension } from "../src/core/gates";
-import { channelStats, count, evaluate, pathOf, populationStats, toCsv, withOverrides, EMPTY_STATS, type Population } from "../src/core/populations";
+import { channelStats, compareCounts, count, evaluate, pathOf, populationStats, toCsv, withOverrides, EMPTY_STATS, type Population } from "../src/core/populations";
 
 const lin = { kind: "linear", min: 0, max: 100 } as const;
 const X: Dimension = { param: "X", scale: lin };
@@ -130,4 +130,15 @@ test("a sample's adjusted gates replace the shared ones only for that sample", (
   expect(mine[0]!.gate).toEqual(own);
   expect(mine[1]!.gate.kind).toBe("boolean"); // only drawn gates can be adjusted
   expect(shared[0]!.gate).not.toEqual(own);
+});
+
+test("compareCounts matches populations by path and keeps only changed counts", () => {
+  const gate = { kind: "boolean", op: "not", of: [] } as unknown as Population["gate"];
+  const before = { populations: [{ id: "a", name: "Cells", parentId: null, gate }, { id: "b", name: "Live", parentId: "a", gate }, { id: "c", name: "Dead", parentId: "a", gate }], counts: new Map([["a", 100], ["b", 60], ["c", 40]]) };
+  const after = { populations: [{ id: "x", name: "Cells", parentId: null, gate }, { id: "y", name: "Live", parentId: "x", gate }, { id: "z", name: "B cells", parentId: "y", gate }], counts: new Map([["x", 100], ["y", 70], ["z", 20]]) };
+  expect(compareCounts("s1", before, after)).toEqual([
+    { sample: "s1", path: "Cells/Live", before: 60, after: 70 },
+    { sample: "s1", path: "Cells/Live/B cells", before: undefined, after: 20 },
+    { sample: "s1", path: "Cells/Dead", before: 40, after: undefined },
+  ]);
 });

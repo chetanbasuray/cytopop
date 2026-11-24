@@ -362,3 +362,14 @@ export function statValues(keys: StatKey[], row: { cols: (Float32Array | undefin
   });
   return result;
 }
+
+export interface CountChange { sample: string; path: string; before?: number; after?: number }
+
+/** Population counts of one sample whose value changes between two gatings; populations are matched by path, since ids differ between files. */
+export function compareCounts(sample: string, before: { populations: Population[]; counts: Map<string, number> }, after: { populations: Population[]; counts: Map<string, number> }): CountChange[] {
+  const byPath = (g: typeof before) => new Map(g.populations.map((p) => [pathOf(g.populations, p.id), g.counts.get(p.id)]));
+  const old = byPath(before), next = byPath(after);
+  return [...new Set([...next.keys(), ...old.keys()])]
+    .map((path) => ({ sample, path, before: old.get(path), after: next.get(path) }))
+    .filter((c) => c.before !== c.after);
+}
