@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import { percentileOf, splitEdge, withThresholds, type Dimension, type Gate, type Quadrant, type Threshold } from "../core/gates";
+import { linkSibling } from "../core/gate-edit";
 import { fromSpec } from "../core/transforms";
 import { readWsp } from "../core/wsp";
 import { writeWsp } from "../core/wsp-write";
@@ -342,6 +343,20 @@ export function App() {
       });
     });
   };
+
+  /** Replaces a population's gate. Quadrants, dividers and hinged quadrants that shared the moved edge or point move with it. */
+  const editGate = (id: string, gate: Gate) =>
+    setPopulations((all) => {
+      const target = populations.find((p) => p.id === id);
+      const before = target?.gate;
+      if (!target || !before || before.kind === "boolean" || before.kind === "clean") return all;
+      return all.map((p) => {
+        if (p.id === id) return { ...p, gate };
+        if (p.parentId !== target.parentId || p.gate.kind === "boolean" || p.gate.kind === "clean") return p;
+        const linked = linkSibling(before, gate, p.gate);
+        return linked === p.gate ? p : { ...p, gate: linked };
+      });
+    });
 
   const removePopulation = (id: string) => {
     const doomed = descendants(populations, id);
@@ -689,6 +704,7 @@ export function App() {
             spill={sample ? spilloverFor(sample.names, sample.file.spillover, editedSpill) : undefined}
             onEditMatrix={() => setEditingMatrix(true)}
             onGate={onGate}
+            onEditGate={editGate}
             onQuadrants={onQuadrants}
             onDivider={onDivider}
             onOpen={() => fileInput.current?.click()}
