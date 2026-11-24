@@ -7,7 +7,7 @@ import { linkSibling } from "../core/gate-edit";
 import { fromSpec } from "../core/transforms";
 import { readWsp } from "../core/wsp";
 import { writeWsp } from "../core/wsp-write";
-import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, withOverrides, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
+import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, compareCounts, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, withOverrides, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
@@ -35,6 +35,7 @@ import { SampleBar } from "./SampleBar";
 import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { ReportDialog } from "./ReportDialog";
+import { PreviewDialog, type Preview } from "./PreviewDialog";
 import { GroupsDialog } from "./GroupsDialog";
 import { MetadataDialog } from "./MetadataDialog";
 import { GridDialog } from "./GridDialog";
@@ -67,6 +68,19 @@ function loadStored(): Template | undefined {
 }
 
 type Toast = { message: string; severity: "error" | "warning" | "info" };
+
+/** Everything a template or workspace load replaces, so the load can be previewed and undone in one step. */
+interface Gating {
+  populations: Population[];
+  scales: Record<string, TransformSpec>;
+  spillover: Spillover | undefined;
+  derived: DerivedParameter[];
+  useComp: boolean;
+  groups: Record<string, string>;
+  keywordCols: string[];
+  annotations: Annotations;
+  overrides: Record<string, Record<string, Gate>>;
+}
 
 export function App() {
   const stored = useMemo(loadStored, []);
@@ -107,6 +121,9 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<{ preview: Preview; next: Gating; done: () => void } | null>(null);
+  // The last bulk load, so undo and redo restore everything it replaced, not only the gates.
+  const bulk = useRef<{ before: Gating; after: Gating } | null>(null);
 
   for (const s of samples) withDerived(s, derived);
   const groupNames = new Set(Object.values(groups));
@@ -169,12 +186,12 @@ export function App() {
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return; // keep text undo in fields
       e.preventDefault();
-      if (e.key.toLowerCase() === "y" || e.shiftKey) history.redo();
-      else history.undo();
+      if (e.key.toLowerCase() === "y" || e.shiftKey) redoAll();
+      else undoAll();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [history.undo, history.redo]);
+  });
 
   const scaleFor = useCallback((name: string) => {
     const set = scales[name];
@@ -439,19 +456,79 @@ export function App() {
     }
   };
 
+  const current = (): Gating => ({ populations: rawPopulations, scales, spillover: editedSpill, derived, useComp, groups, keywordCols, annotations, overrides });
+  const restore = (g: Gating) => {
+    setScales(g.scales);
+    setEditedSpill(g.spillover);
+    setDerived(g.derived);
+    setUseComp(g.useComp);
+    setGroups(g.groups);
+    setKeywordCols(g.keywordCols);
+    setAnnotations(g.annotations);
+    setOverrides(g.overrides);
+    setParent(null);
+  };
+  const undoAll = () => {
+    if (history.canUndo && bulk.current && rawPopulations === bulk.current.after.populations) restore(bulk.current.before);
+    history.undo();
+  };
+  const redoAll = () => {
+    if (bulk.current && history.next === bulk.current.after.populations) restore(bulk.current.after);
+    history.redo();
+  };
+  const applyBulk = (next: Gating, done: () => void) => {
+    bulk.current = { before: current(), after: next };
+    setPopulations(next.populations);
+    restore(next);
+    done();
+  };
+
+  /** Counts per open sample before and after a load; with nothing to lose (no gates yet) the load applies straight away. */
+  const proposeBulk = (title: string, next: Gating, done: () => void) => {
+    if (!rawPopulations.length) return applyBulk(next, done);
+    const now = current();
+    const counts = (g: Gating, s: Sample) => {
+      const pops = withOverrides(g.populations, g.overrides[s.name]);
+      const copy = withDerived({ ...s }, g.derived); // a copy, so the open sample keeps its own derived columns
+      const masks = evaluate(pops, copy.names, columns(copy, g.useComp, g.spillover, g.derived), s.file.parameters.map((q) => q.range));
+      return { populations: pops, counts: new Map([...masks].map(([id, m]) => [id, eventsIn(m)])) };
+    };
+    const errors: string[] = [];
+    const rows = samples.flatMap((s) => {
+      // A sample the gates do not fit (another panel) counts nothing; only the new gates' misfits are worth reporting.
+      const side = (g: Gating) => {
+        try {
+          return counts(g, s);
+        } catch (err) {
+          if (g === next) errors.push(`${s.name}: the new gates do not fit; ${(err as Error).message}`);
+          return { populations: [], counts: new Map<string, number>() };
+        }
+      };
+      return compareCounts(s.name, side(now), side(next));
+    });
+    setPending({
+      next,
+      done,
+      preview: {
+        title,
+        summary: `${next.populations.length} populations will replace the current ${rawPopulations.length}; Undo restores the current gating in one step. ` +
+          (samples.length ? `Counts below are for the ${samples.length} open samples.` : "Open samples to see how their counts change."),
+        rows,
+        errors,
+      },
+    });
+  };
+
   const loadWsp = (file: File, xml: string) => {
     const w = readWsp(xml, samples.map((s) => s.name));
-    setPopulations(w.populations);
-    setScales((s) => ({ ...s, ...w.scales }));
-    setEditedSpill(w.spillover);
-    if (w.compensated) setUseComp(true);
-    setDerived([]);
-    setParent(null);
-    const missing = w.samples.filter((n) => !samples.some((s) => s.name === n));
-    const summary = `Loaded ${w.populations.length} populations from ${file.name}, using the gates of ${w.source}.` +
-      (missing.length ? ` Open these files to analyse them: ${missing.join(", ")}` : "");
-    if (w.report.length) setImportReport({ title: "Workspace imported with changes", summary, lines: w.report });
-    else setToast({ severity: missing.length ? "warning" : "info", message: summary });
+    const next = { ...current(), populations: w.populations, scales: { ...scales, ...w.scales }, spillover: w.spillover, useComp: w.compensated || useComp, derived: [] };
+    proposeBulk(`Load ${file.name}?`, next, () => {
+      const missing = w.samples.filter((n) => !samples.some((s) => s.name === n));
+      const summary = `Loaded ${w.populations.length} populations from ${file.name}, using the gates of ${w.source}.` +
+        (missing.length ? ` Open these files to analyse them: ${missing.join(", ")}` : "");
+      if (w.report.length) setImportReport({ title: "Workspace imported with changes", summary, lines: w.report });
+      else setToast({ severity: missing.length ? "warning" : "info", message: summary });
+    });
   };
 
   const loadTemplate = async (file: File) => {
@@ -459,20 +536,22 @@ export function App() {
       if (/\.wsp$/i.test(file.name)) return loadWsp(file, await file.text());
       const t: unknown = JSON.parse(await file.text());
       if (!isTemplate(t)) throw new Error("This file is not a CytoPop workspace or gating template");
-      setPopulations(t.populations);
-      setScales((s) => ({ ...s, ...t.scales }));
-      setEditedSpill(t.spillover);
-      setDerived(t.derived ?? []);
-      if (t.groups) setGroups(t.groups);
-      if (t.keywordColumns) setKeywordCols(t.keywordColumns);
-      if (t.annotations) setAnnotations(t.annotations);
-      setOverrides(t.overrides ?? {}); // a gating template carries only the shared gates
-      setParent(null);
+      const next: Gating = {
+        ...current(),
+        populations: t.populations,
+        scales: { ...scales, ...t.scales },
+        spillover: t.spillover,
+        derived: t.derived ?? [],
+        ...(t.groups ? { groups: t.groups } : {}),
+        ...(t.keywordColumns ? { keywordCols: t.keywordColumns } : {}),
+        ...(t.annotations ? { annotations: t.annotations } : {}),
+        overrides: t.overrides ?? {}, // a gating template carries only the shared gates
+      };
       // Gates refer to parameter names, so opening the listed files again relinks them.
       const missing = (t.samples ?? []).filter((n) => !samples.some((s) => s.name === n));
-      setToast(missing.length
+      proposeBulk(`Load ${file.name}?`, next, () => setToast(missing.length
         ? { severity: "warning", message: `Loaded ${t.populations.length} populations from ${file.name}. Open these files to relink them: ${missing.join(", ")}` }
-        : { severity: "info", message: `Loaded ${t.populations.length} populations from ${file.name}` });
+        : { severity: "info", message: `Loaded ${t.populations.length} populations from ${file.name}` }));
     } catch (err) {
       setToast({ severity: "error", message: (err as Error).message });
     }
@@ -708,8 +787,8 @@ export function App() {
             onResetAdjustment={(id) => sample && resetAdjustment(sample.name, id)}
             onThreshold={setThresholding}
             onCombine={() => setCombining(true)}
-            onUndo={history.canUndo ? history.undo : undefined}
-            onRedo={history.canRedo ? history.redo : undefined}
+            onUndo={history.canUndo ? undoAll : undefined}
+            onRedo={history.canRedo ? redoAll : undefined}
           />
         </Box>
         <Box sx={{ gridArea: "plot", minWidth: 0 }}>
@@ -879,6 +958,14 @@ export function App() {
         }}
       />
       <ReportDialog report={importReport} onClose={() => setImportReport(null)} />
+      <PreviewDialog
+        preview={pending?.preview ?? null}
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          if (pending) applyBulk(pending.next, pending.done);
+          setPending(null);
+        }}
+      />
       <Snackbar
         open={!!toast}
         autoHideDuration={toast?.severity === "error" ? 8000 : 4000}
