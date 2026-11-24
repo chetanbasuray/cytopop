@@ -5,6 +5,7 @@ import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import FunctionsOutlined from "@mui/icons-material/FunctionsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import TableChartOutlined from "@mui/icons-material/TableChartOutlined";
 import Check from "@mui/icons-material/Check";
 import DarkModeOutlined from "@mui/icons-material/DarkModeOutlined";
 import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
@@ -63,6 +64,7 @@ export function TopBar(props: {
   onSaveTemplate: () => void;
   onSaveWsp: () => void;
   onSaveGating: () => void;
+  onSampleTable: () => void;
   onLoadTemplate: (file: File) => void;
   onCheckSettings: () => void;
   onClean: () => void;
@@ -108,6 +110,16 @@ export function TopBar(props: {
           >
             <ListItemIcon><DownloadOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Export statistics as CSV</ListItemText>
+          </MenuItem>
+          <MenuItem
+            disabled={!props.canExport}
+            onClick={() => {
+              props.onSampleTable();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><TableChartOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Statistics by sample</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {

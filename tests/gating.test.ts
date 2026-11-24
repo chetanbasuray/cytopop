@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyGate, GateError, pointInPolygon, quadrants, type Dimension } from "../src/core/gates";
-import { channelStats, compareCounts, count, evaluate, pathOf, populationStats, toCsv, withOverrides, EMPTY_STATS, type Population } from "../src/core/populations";
+import { channelStats, compareCounts, count, sampleTable, evaluate, pathOf, populationStats, toCsv, withOverrides, EMPTY_STATS, type Population } from "../src/core/populations";
 
 const lin = { kind: "linear", min: 0, max: 100 } as const;
 const X: Dimension = { param: "X", scale: lin };
@@ -141,4 +141,20 @@ test("compareCounts matches populations by path and keeps only changed counts", 
     { sample: "s1", path: "Cells/Live/B cells", before: undefined, after: 20 },
     { sample: "s1", path: "Cells/Dead", before: 40, after: undefined },
   ]);
+});
+
+test("sampleTable puts every sample on one row with a column per population and measure", () => {
+  const long = {
+    header: ["Sample", "Group", "Population", "Count", "% parent"],
+    rows: [
+      ["a.fcs", "Day 1", "All events", 100, 100],
+      ["a.fcs", "Day 1", "Live", 60, 60],
+      ["b.fcs", "Day 2", "Error: Parameter X is not in the sample"],
+      ["c.fcs", "Day 2", "Live", 30, 50],
+    ],
+  };
+  expect(sampleTable(long, 1, ["Live"], ["Count", "% parent"])).toEqual({
+    header: ["Sample", "Group", "Live Count", "Live % parent"],
+    rows: [["a.fcs", "Day 1", 60, 60], ["b.fcs", "Day 2", "", ""], ["c.fcs", "Day 2", 30, 50]],
+  });
 });

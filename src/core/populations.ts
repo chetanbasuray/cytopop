@@ -373,3 +373,22 @@ export function compareCounts(sample: string, before: { populations: Population[
     .map((path) => ({ sample, path, before: old.get(path), after: next.get(path) }))
     .filter((c) => c.before !== c.after);
 }
+
+/**
+ * Pivots long statistics rows (Sample, metadata…, Population, measures…) into one row per sample,
+ * with a column for each chosen population and measure; missing values are empty.
+ */
+export function sampleTable(long: { header: string[]; rows: (string | number)[][] }, meta: number, populations: string[], measures: string[]): { header: string[]; rows: (string | number)[][] } {
+  const at = (m: string) => long.header.indexOf(m);
+  const bySample = new Map<string, { info: (string | number)[]; cells: Map<string, (string | number)[]> }>();
+  for (const r of long.rows) {
+    const name = String(r[0]);
+    let s = bySample.get(name);
+    if (!s) bySample.set(name, (s = { info: r.slice(0, 1 + meta), cells: new Map() }));
+    s.cells.set(String(r[1 + meta]), r);
+  }
+  return {
+    header: [...long.header.slice(0, 1 + meta), ...populations.flatMap((p) => measures.map((m) => `${p} ${m}`))],
+    rows: [...bySample.values()].map((s) => [...s.info, ...populations.flatMap((p) => measures.map((m) => s.cells.get(p)?.[at(m)] ?? ""))]),
+  };
+}

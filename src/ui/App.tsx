@@ -36,6 +36,7 @@ import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { ReportDialog } from "./ReportDialog";
 import { PreviewDialog, type Preview } from "./PreviewDialog";
+import { SampleTableDialog } from "./SampleTableDialog";
 import { GroupsDialog } from "./GroupsDialog";
 import { MetadataDialog } from "./MetadataDialog";
 import { GridDialog } from "./GridDialog";
@@ -121,6 +122,7 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [sampleTableData, setSampleTableData] = useState<{ header: string[]; rows: (string | number)[][] } | null>(null);
   const [pending, setPending] = useState<{ preview: Preview; next: Gating; done: () => void } | null>(null);
   // The last bulk load, so undo and redo restore everything it replaced, not only the gates.
   const bulk = useRef<{ before: Gating; after: Gating } | null>(null);
@@ -637,7 +639,8 @@ export function App() {
     download("cytopop-settings.csv", toCsv(["Parameter", "Setting", ...samples.map((s) => s.name)],
       settingRows.map((r) => [r.parameter ?? "Sample", r.setting, ...r.values.map((v) => (v === undefined ? "" : r.setting === "Spillover matrix" ? "present" : v))])), "text/csv");
 
-  const exportCsv = () => {
+  /** Long statistics rows for the shown samples: Sample, metadata, Population, Count, % parent, % total, statistics. */
+  const statTable = () => {
     const rows: (string | number)[][] = [];
     const split = splitKeys(statKeys);
     for (const s of shownSamples) {
@@ -665,6 +668,10 @@ export function App() {
       ...split.population.map((k) => STATS.find((st) => st.key === k)!.label),
       ...statChannels.flatMap((ch) => split.channel.map((k) => `${STATS.find((st) => st.key === k)!.label} ${ch}`)),
     ];
+    return { header, rows };
+  };
+  const exportCsv = () => {
+    const { header, rows } = statTable();
     download("cytopop-statistics.csv", toCsv(header, rows), "text/csv");
   };
 
@@ -700,6 +707,7 @@ export function App() {
         onSaveTemplate={saveTemplate}
         onSaveWsp={saveWsp}
         onSaveGating={saveGating}
+        onSampleTable={() => setSampleTableData(statTable())}
         onLoadTemplate={loadTemplate}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
@@ -957,6 +965,7 @@ export function App() {
           setCombining(false);
         }}
       />
+      <SampleTableDialog open={!!sampleTableData} long={sampleTableData} meta={metaHeader.length} onClose={() => setSampleTableData(null)} />
       <ReportDialog report={importReport} onClose={() => setImportReport(null)} />
       <PreviewDialog
         preview={pending?.preview ?? null}
