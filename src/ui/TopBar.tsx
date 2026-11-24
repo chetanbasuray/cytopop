@@ -1,3 +1,4 @@
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import RuleOutlined from "@mui/icons-material/RuleOutlined";
 import IosShareOutlined from "@mui/icons-material/IosShareOutlined";
 import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
@@ -68,6 +69,7 @@ export function TopBar(props: {
   onSampleTable: () => void;
   onLoadTemplate: (file: File) => void;
   onRules: () => void;
+  onVersions: () => void;
   onCheckSettings: () => void;
   onClean: () => void;
   onTrack: () => void;
@@ -131,6 +133,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><SaveOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Save workspace</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onVersions();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><HistoryOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Gating versions</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {
