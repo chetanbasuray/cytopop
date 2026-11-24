@@ -18,6 +18,8 @@ import { Footer } from "./Footer";
 import { spilloverFor, spilloverFromControls, type ControlEvents } from "../core/compensation";
 import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
+import { ConcatenateDialog } from "./ConcatenateDialog";
+import { concatenate } from "../core/concatenate";
 import { MatrixDialog } from "./MatrixDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { CleaningDialog } from "./CleaningDialog";
@@ -119,6 +121,7 @@ export function App() {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [combining, setCombining] = useState(false);
+  const [concatenating, setConcatenating] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -736,6 +739,7 @@ export function App() {
         onEditGroups={() => setEditingGroups(true)}
         details={details}
         onEditMetadata={() => setEditingMeta(true)}
+        onConcatenate={() => setConcatenating(true)}
       />
       {editingMeta && (
         <MetadataDialog
@@ -955,6 +959,20 @@ export function App() {
         onChange={setEditedSpill}
         onRestore={() => setEditedSpill(undefined)}
         onClose={() => setEditingMatrix(false)}
+      />
+      <ConcatenateDialog
+        open={concatenating}
+        samples={samples}
+        onCancel={() => setConcatenating(false)}
+        onConfirm={(name, picked) => {
+          // Written out as an FCS file so it is kept between sessions like an opened file.
+          const joined = concatenate(picked.map((s) => ({ name: s.name, file: s.file })));
+          const bytes = eventsFcs(joined, joined.data, pickedEvents(joined.eventCount), false, {});
+          const id = newId("s");
+          addSample(name, parseFcs(bytes), bytes, id);
+          setActive(id);
+          setConcatenating(false);
+        }}
       />
       <CombineDialog
         open={combining}
