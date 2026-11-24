@@ -2,8 +2,8 @@ import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, List,
 import type { CountChange } from "../core/populations";
 
 export interface Preview { title: string; summary: string; rows: CountChange[]; errors: string[] }
-/** Shows what a bulk gating change will do to the open samples and lets the user confirm or cancel. */
-export function PreviewDialog(props: { preview: Preview | null; onConfirm: () => void; onCancel: () => void }) {
+/** Shows what a bulk gating change will do to the open samples and lets the user confirm or cancel; without onConfirm it only reports. */
+export function PreviewDialog(props: { preview: Preview | null; onConfirm?: () => void; onCancel: () => void }) {
   const p = props.preview;
   if (!p) return null;
   return (
@@ -54,8 +54,14 @@ export function PreviewDialog(props: { preview: Preview | null; onConfirm: () =>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={props.onCancel}>Cancel</Button>
-        <Button variant="contained" onClick={props.onConfirm}>Apply</Button>
+        {props.onConfirm ? (
+          <>
+            <Button onClick={props.onCancel}>Cancel</Button>
+            <Button variant="contained" onClick={props.onConfirm}>Apply</Button>
+          </>
+        ) : (
+          <Button variant="contained" onClick={props.onCancel}>Close</Button>
+        )}
       </DialogActions>
     </Dialog>
   );

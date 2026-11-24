@@ -1,4 +1,4 @@
-import { Alert, Box, Snackbar } from "@mui/material";
+import { Alert, Box, Button, Snackbar } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { demoSample } from "../core/demo";
 import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
@@ -11,7 +11,7 @@ import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, compareCou
 import type { TransformSpec } from "../core/transforms";
 import {
   columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
-  type Annotations, type Sample, type Template, type TemplateRule, type Tool,
+  type Annotations, type Sample, type Template, type GatingVersion, type TemplateRule, type Tool,
   rangeScale, withDerived,
 } from "./model";
 import { Footer } from "./Footer";
@@ -20,6 +20,7 @@ import type { Spillover } from "../core/fcs";
 import { CombineDialog } from "./CombineDialog";
 import { ConcatenateDialog } from "./ConcatenateDialog";
 import { RulesDialog } from "./RulesDialog";
+import { VersionsDialog } from "./VersionsDialog";
 import { matchRules } from "../core/rules";
 import { concatenate } from "../core/concatenate";
 import { MatrixDialog } from "./MatrixDialog";
@@ -52,6 +53,16 @@ import { TopBar } from "./TopBar";
 const STORE_KEY = "cytopop.template.v1";
 const STATS_KEY = "cytopop.stats.v1";
 const RULES_KEY = "cytopop.rules.v1";
+const VERSIONS_KEY = "cytopop.versions.v1";
+
+function loadVersions(): GatingVersion[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(VERSIONS_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((v): v is GatingVersion => typeof v?.id === "string" && typeof v?.name === "string" && typeof v?.saved === "string" && isTemplate(v?.template)) : [];
+  } catch {
+    return [];
+  }
+}
 
 const validStatKeys = (raw: unknown): StatKey[] => (Array.isArray(raw) ? STATS.map((s) => s.key).filter((k) => raw.includes(k)) : []);
 
@@ -84,7 +95,7 @@ function loadStored(): Template | undefined {
   }
 }
 
-type Toast = { message: string; severity: "error" | "warning" | "info" };
+type Toast = { message: string; severity: "error" | "warning" | "info"; action?: { label: string; run: () => void } };
 
 /** Everything a template or workspace load replaces, so the load can be previewed and undone in one step. */
 interface Gating {
@@ -138,8 +149,12 @@ export function App() {
   const [concatenating, setConcatenating] = useState(false);
   const [rules, setRules] = useState<TemplateRule[]>(loadRules);
   const [editingRules, setEditingRules] = useState(false);
+  const [versions, setVersions] = useState<GatingVersion[]>(loadVersions);
+  const [editingVersions, setEditingVersions] = useState(false);
   const [justOpened, setJustOpened] = useState<string[]>([]);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [effect, setEffect] = useState<Preview | null>(null);
+  const moveBase = useRef<Gating | null>(null);
   const [importReport, setImportReport] = useState<{ title: string; summary: string; lines: string[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [sampleTableData, setSampleTableData] = useState<{ header: string[]; rows: (string | number)[][] } | null>(null);
@@ -239,6 +254,14 @@ export function App() {
       /* per-viewer convenience only */
     }
   }, [rules]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VERSIONS_KEY, JSON.stringify(versions));
+    } catch {
+      setToast({ severity: "warning", message: "The browser could not store the gating versions" });
+    }
+  }, [versions]);
 
   useEffect(() => {
     try {
@@ -406,6 +429,16 @@ export function App() {
   /** Replaces a population's gate. Quadrants, dividers and hinged quadrants that shared the moved edge or point move with it. */
   const editGate = (id: string, gate: Gate) => {
     if (adjustOne && sample) return adjustGate(sample, id, gate);
+    if (samples.length > 1) {
+      // Successive nudges share one baseline until the toast goes away, so the table shows the whole adjustment.
+      moveBase.current ??= latest.current().current(); // PlotPanel may call an older editGate, so read the latest gating
+      const base = moveBase.current;
+      setToast({
+        severity: "info",
+        message: `Gate moved on all ${samples.length} samples that share it`,
+        action: { label: "Show effect", run: () => showEffect(base) },
+      });
+    }
     setPopulations((all) => {
       const target = populations.find((p) => p.id === id);
       const before = target?.gate;
@@ -517,9 +550,8 @@ export function App() {
   };
 
   /** Counts per open sample before and after a load; with nothing to lose (no gates yet) the load applies straight away. */
-  const proposeBulk = (title: string, next: Gating, done: () => void) => {
-    if (!rawPopulations.length) return applyBulk(next, done);
-    const now = current();
+  /** Per-sample count changes between two gatings, and the samples the new gates do not fit. */
+  const countChanges = (now: Gating, next: Gating) => {
     const counts = (g: Gating, s: Sample) => {
       const pops = withOverrides(g.populations, g.overrides[s.name]);
       const copy = withDerived({ ...s }, g.derived); // a copy, so the open sample keeps its own derived columns
@@ -539,6 +571,19 @@ export function App() {
       };
       return compareCounts(s.name, side(now), side(next));
     });
+    return { rows, errors };
+  };
+  // The toast's button runs after later renders, so it reads the gating through this ref rather than a stale closure.
+  const latest = useRef(() => ({ current, countChanges }));
+  latest.current = () => ({ current, countChanges });
+  const showEffect = (base: Gating) => {
+    const { current: now, countChanges: changes } = latest.current();
+    const { rows, errors } = changes(base, now());
+    setEffect({ title: "Effect of the gate move", summary: `Counts before and after the move, for the ${samples.length} open samples. Undo reverts the move.`, rows, errors });
+  };
+  const proposeBulk = (title: string, next: Gating, done: () => void) => {
+    if (!rawPopulations.length) return applyBulk(next, done);
+    const { rows, errors } = countChanges(current(), next);
     setPending({
       next,
       done,
@@ -758,6 +803,7 @@ export function App() {
         onSampleTable={() => setSampleTableData(statTable())}
         onLoadTemplate={loadTemplate}
         onRules={() => setEditingRules(true)}
+        onVersions={() => setEditingVersions(true)}
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
         onTrack={() => setTracking(true)}
@@ -1006,6 +1052,23 @@ export function App() {
         onRestore={() => setEditedSpill(undefined)}
         onClose={() => setEditingMatrix(false)}
       />
+      <VersionsDialog
+        open={editingVersions}
+        versions={versions}
+        canSave={rawPopulations.length > 0}
+        onSave={(name) => setVersions((v) => [...v, {
+          id: newId("v"), name, saved: new Date().toISOString(),
+          template: { populations: rawPopulations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) },
+        }])}
+        onRestore={(id) => {
+          const v = versions.find((x) => x.id === id);
+          if (!v) return;
+          setEditingVersions(false);
+          proposeBulk(`Restore ${v.name}?`, fromTemplate(v.template), () => setToast({ severity: "info", message: `Restored ${v.name}; Undo switches back` }));
+        }}
+        onRemove={(id) => setVersions((v) => v.filter((x) => x.id !== id))}
+        onClose={() => setEditingVersions(false)}
+      />
       <RulesDialog
         open={editingRules}
         rules={rules}
@@ -1042,6 +1105,7 @@ export function App() {
       />
       <SampleTableDialog open={!!sampleTableData} long={sampleTableData} meta={metaHeader.length} onClose={() => setSampleTableData(null)} />
       <ReportDialog report={importReport} onClose={() => setImportReport(null)} />
+      <PreviewDialog preview={effect} onCancel={() => setEffect(null)} />
       <PreviewDialog
         preview={pending?.preview ?? null}
         onCancel={() => setPending(null)}
@@ -1053,10 +1117,21 @@ export function App() {
       <Snackbar
         open={!!toast}
         autoHideDuration={toast?.severity === "error" ? 8000 : 4000}
-        onClose={() => setToast(null)}
+        onClose={() => {
+          setToast(null);
+          moveBase.current = null;
+        }}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert severity={toast?.severity ?? "info"} variant="filled" onClose={() => setToast(null)} sx={{ maxWidth: 560 }}>
+        <Alert
+          severity={toast?.severity ?? "info"}
+          variant="filled"
+          onClose={() => { setToast(null); moveBase.current = null; }}
+          action={toast?.action && (
+            <Button color="inherit" size="small" onClick={() => { toast.action?.run(); setToast(null); moveBase.current = null; }}>{toast.action.label}</Button>
+          )}
+          sx={{ maxWidth: 560 }}
+        >
           {toast?.message}
         </Alert>
       </Snackbar>

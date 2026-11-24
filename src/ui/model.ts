@@ -40,6 +40,14 @@ export interface TemplateRule {
   statKeys: string[];
 }
 
+/** A named copy of the gating, to try another strategy and come back. */
+export interface GatingVersion {
+  id: string;
+  name: string;
+  saved: string; // ISO time
+  template: Template;
+}
+
 export interface Annotations {
   columns: string[]; // user-defined columns, in order
   values: Record<string, Record<string, string>>; // sample file name to column to value
