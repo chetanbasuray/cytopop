@@ -378,6 +378,15 @@ export function compareCounts(sample: string, before: { populations: Population[
  * Pivots long statistics rows (Sample, metadata…, Population, measures…) into one row per sample,
  * with a column for each chosen population and measure; missing values are empty.
  */
+/** The same statistics as {@link sampleTable}, one row per sample, population and statistic, with fixed column names for scripts. */
+export function tallTable(long: { header: string[]; rows: (string | number)[][] }, meta: number, populations: string[], measures: string[]): { header: string[]; rows: (string | number)[][] } {
+  const wide = sampleTable(long, meta, populations, measures);
+  return {
+    header: [...long.header.slice(0, 1 + meta), "Population", "Statistic", "Value"],
+    rows: wide.rows.flatMap((r) => populations.flatMap((p, i) => measures.map((m, j) => [...r.slice(0, 1 + meta), p, m, r[1 + meta + i * measures.length + j] ?? ""]))),
+  };
+}
+
 export function sampleTable(long: { header: string[]; rows: (string | number)[][] }, meta: number, populations: string[], measures: string[]): { header: string[]; rows: (string | number)[][] } {
   const at = (m: string) => long.header.indexOf(m);
   const bySample = new Map<string, { info: (string | number)[]; cells: Map<string, (string | number)[]> }>();
