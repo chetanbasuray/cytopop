@@ -30,6 +30,7 @@ export interface Template {
   keywordColumns?: string[]; // FCS keywords shown next to samples and in the statistics export
   annotations?: Annotations;
   overrides?: Record<string, Record<string, Gate>>; // sample file name to population id to that sample's own gate
+  keywordEdits?: Record<string, Record<string, string>>; // sample file name to FCS keyword to the value that replaces or adds to the file's
 }
 
 /** Gating applied by itself when every newly opened file's name matches `pattern`. */
@@ -73,7 +74,8 @@ export function isTemplate(t: unknown): t is Template {
     ((t as Template).groups === undefined || isStrings((t as Template).groups)) &&
     ((t as Template).keywordColumns === undefined || (Array.isArray((t as Template).keywordColumns) && (t as Template).keywordColumns!.every((k) => typeof k === "string"))) &&
     ((t as Template).annotations === undefined || isAnnotations((t as Template).annotations)) &&
-    ((t as Template).overrides === undefined || isOverrides((t as Template).overrides));
+    ((t as Template).overrides === undefined || isOverrides((t as Template).overrides)) &&
+    ((t as Template).keywordEdits === undefined || (isObject((t as Template).keywordEdits) && Object.values((t as Template).keywordEdits!).every(isStrings)));
 }
 
 /** Sets a sample's parameter names to its file's parameters followed by the derived ones. */
