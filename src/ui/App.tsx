@@ -341,7 +341,14 @@ export function App() {
   // ---------- samples ----------
   const addSample = (name: string, file: FcsFile, bytes?: ArrayBuffer, id = newId("s"), keep = true) => {
     const s: Sample = { id, name, file, names: file.parameters.map((p) => p.name) };
-    setSamples((prev) => [...prev, s]);
+    // A file with the name of an open sample replaces it: settings are keyed by name, so two copies would share them.
+    setSamples((prev) => {
+      const old = prev.find((p) => p.name === name);
+      if (!old) return [...prev, s];
+      setActive((a) => (a === old.id ? s.id : a));
+      forgetFile(old.id).catch(() => undefined);
+      return prev.map((p) => (p === old ? s : p));
+    });
     setActive((a) => a ?? s.id);
     if (keep) keepFile({ id, name, bytes }).catch((err) => setToast({ severity: "warning", message: storageMessage(name, err) }));
   };
