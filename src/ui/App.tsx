@@ -5,14 +5,16 @@ import { FcsError, parseFcs, type FcsFile } from "../core/fcs";
 import { percentileOf, splitEdge, withThresholds, type Dimension, type Gate, type Quadrant, type Threshold } from "../core/gates";
 import { linkSibling } from "../core/gate-edit";
 import { fromSpec } from "../core/transforms";
+import { batchDensities, displayQuantiles, METHOD, type ChannelMap } from "../core/normalise";
 import { readWsp } from "../core/wsp";
 import { writeWsp } from "../core/wsp-write";
 import { channelStats, count as eventsIn, DEFAULT_STATS, EMPTY_STATS, compareCounts, evaluate, pathOf, populationStats, splitKeys, STATS, statValues, toCsv, volumeMicrolitres, withOverrides, type ChannelStatKey, type Population, type StatKey } from "../core/populations";
 import type { TransformSpec } from "../core/transforms";
 import {
-  columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
+  baseColumns, columns, DEMO_NAME, defaultScale, descendants, download, paramLabel, HIST, isTemplate, newId, retarget,
   type Annotations, type Sample, type Template, type GatingVersion, type TemplateRule, type Tool,
   rangeScale, withDerived,
+  type Normalisation,
 } from "./model";
 import { Footer } from "./Footer";
 import { spilloverFor, spilloverFromControls, type ControlEvents } from "../core/compensation";
@@ -41,6 +43,7 @@ import { DerivedDialog } from "./DerivedDialog";
 import { ThresholdDialog } from "./ThresholdDialog";
 import { ReportDialog } from "./ReportDialog";
 import { PreviewDialog, type Preview } from "./PreviewDialog";
+import { NormaliseDialog } from "./NormaliseDialog";
 import { SampleTableDialog } from "./SampleTableDialog";
 import { GroupsDialog } from "./GroupsDialog";
 import { MetadataDialog } from "./MetadataDialog";
@@ -109,6 +112,7 @@ interface Gating {
   annotations: Annotations;
   overrides: Record<string, Record<string, Gate>>;
   keywordEdits: Record<string, Record<string, string>>;
+  normalisation: Normalisation | undefined;
 }
 
 export function App() {
@@ -141,6 +145,8 @@ export function App() {
   const [keywordCols, setKeywordCols] = useState<string[]>(stored?.keywordColumns ?? []);
   const [annotations, setAnnotations] = useState<Annotations>(stored?.annotations ?? { columns: [], values: {} });
   const [editingMeta, setEditingMeta] = useState(false);
+  const [normalisation, setNormalisation] = useState<Normalisation | undefined>(stored?.normalisation);
+  const [normalising, setNormalising] = useState(false);
   const [keywordEdits, setKeywordEdits] = useState<Record<string, Record<string, string>>>(stored?.keywordEdits ?? {});
   const [overrides, setOverrides] = useState<Record<string, Record<string, Gate>>>(stored?.overrides ?? {});
   const [adjustOne, setAdjustOne] = useState(false);
@@ -165,6 +171,48 @@ export function App() {
   const bulk = useRef<{ before: Gating; after: Gating } | null>(null);
 
   for (const s of samples) withDerived(s, derived);
+  // Each batch's reference is warped onto the anchor's; every sample in the batch gets that batch's warp.
+  const norm = useMemo(() => {
+    const byName = new Map(samples.map((s) => [s.name, s]));
+    const anchorRef = normalisation && byName.get(normalisation.references[normalisation.anchor] ?? "");
+    const maps = new Map<string, Record<string, ChannelMap>>();
+    if (!normalisation || !anchorRef) return { key: "", maps, describe: (_s: Sample) => "" };
+    const quantiles = (s: Sample, ch: string, scale: TransformSpec) => {
+      const i = s.file.parameters.findIndex((q) => q.name === ch);
+      return i < 0 ? [] : displayQuantiles(baseColumns(s, useComp, editedSpill)[i]!, scale);
+    };
+    for (const [group, refName] of Object.entries(normalisation.references)) {
+      const ref = byName.get(refName);
+      if (group === normalisation.anchor || !ref) continue;
+      const channelMaps: Record<string, ChannelMap> = {};
+      for (const ch of normalisation.channels) {
+        const scale = scales[ch] ?? defaultScale(ref, ch);
+        const from = quantiles(ref, ch, scale), to = quantiles(anchorRef, ch, scale);
+        if (from.length && to.length) channelMaps[ch] = { scale, from, to };
+      }
+      maps.set(group, channelMaps);
+    }
+    const describe = (s: Sample) => {
+      const g = groups[s.name];
+      if (g === normalisation.anchor) return `Anchor batch; reference ${anchorRef.name}`;
+      return g && maps.has(g) ? `${METHOD}; reference ${normalisation.references[g]}; anchor ${anchorRef.name}; channels ${Object.keys(maps.get(g)!).join(", ")}` : "";
+    };
+    return { key: newId("n"), maps, describe };
+  }, [samples, normalisation, groups, scales, useComp, editedSpill]);
+  const normPreview = (n: Normalisation, ch: string) => {
+    const byName = new Map(samples.map((s) => [s.name, s]));
+    const refs = Object.entries(n.references).flatMap(([group, name]) => {
+      const s = byName.get(name);
+      const i = s ? s.file.parameters.findIndex((q) => q.name === ch) : -1;
+      return s && i >= 0 ? [{ group, reference: name, col: baseColumns(s, useComp, editedSpill)[i]! }] : [];
+    });
+    const scale = scales[ch] ?? defaultScale(refs[0] && byName.get(refs[0].reference), ch);
+    return batchDensities(refs, n.anchor, scale).map((d, i) => ({ ...d, reference: refs[i]!.reference }));
+  };
+  for (const s of samples) {
+    const maps = norm.maps.get(groups[s.name] ?? "");
+    s.norm = maps ? { key: norm.key, maps } : undefined;
+  }
   const groupNames = new Set(Object.values(groups));
   const filter = groupNames.has(groupFilter) ? groupFilter : "all";
   const shownSamples = filter === "all" ? samples : samples.filter((s) => groups[s.name] === filter);
@@ -174,9 +222,10 @@ export function App() {
     ...(groupNames.size ? [groups[s.name] ?? ""] : []),
     ...keywordCols.map((k) => keywordsOf(s)[k] ?? ""),
     ...annotations.columns.map((c) => annotations.values[s.name]?.[c] ?? ""),
+    ...(norm.key ? [norm.describe(s)] : []),
   ];
-  const metaHeader = [...(groupNames.size ? ["Group"] : []), ...keywordCols, ...annotations.columns];
-  const details = (s: Sample) => groupCol(s).slice(groupNames.size ? 1 : 0).filter(Boolean).join(" · ");
+  const metaHeader = [...(groupNames.size ? ["Group"] : []), ...keywordCols, ...annotations.columns, ...(norm.key ? ["Normalisation"] : [])];
+  const details = (s: Sample) => groupCol(s).slice(groupNames.size ? 1 : 0, (groupNames.size ? 1 : 0) + keywordCols.length + annotations.columns.length).filter(Boolean).join(" · ");
   // Threshold gates sit at a percentile of a control sample, so they move when the control or its gating changes.
   const populations = useMemo(() => {
     if (!rawPopulations.some((p) => p.gate.kind === "range" ? p.gate.threshold : p.gate.kind === "rectangle" && (p.gate.xThreshold || p.gate.yThreshold))) return rawPopulations;
@@ -203,7 +252,7 @@ export function App() {
       const gate = withThresholds(p.gate, resolve);
       return gate === p.gate ? p : { ...p, gate };
     });
-  }, [rawPopulations, samples, useComp, editedSpill, derived]);
+  }, [rawPopulations, samples, useComp, editedSpill, derived, norm]);
   const [thresholding, setThresholding] = useState<string | null>(null);
   const sample = samples.find((s) => s.id === active);
   const popsFor = (s: Sample) => withOverrides(populations, overrides[s.name]);
@@ -239,17 +288,17 @@ export function App() {
     if (set) return set;
     const i = sample && sample.file.parameters.length <= sample.names.indexOf(name) ? sample.names.indexOf(name) : -1;
     return i >= 0 ? rangeScale(columns(sample!, useComp, editedSpill, derived)[i]!) : defaultScale(sample, name);
-  }, [scales, sample, useComp, editedSpill, derived]);
+  }, [scales, sample, useComp, editedSpill, derived, norm]);
   const xDim: Dimension = { param: x, scale: scaleFor(x) };
   const yDim: Dimension | null = histogram ? null : { param: y, scale: scaleFor(y) };
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}), ...(normalisation ? { normalisation } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations, overrides, keywordEdits]);
+  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations, overrides, keywordEdits, normalisation]);
 
   useEffect(() => {
     try {
@@ -494,7 +543,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}), ...(normalisation ? { normalisation } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const saveWsp = () => {
@@ -526,7 +575,7 @@ export function App() {
     }
   };
 
-  const current = (): Gating => ({ populations: rawPopulations, scales, spillover: editedSpill, derived, useComp, groups, keywordCols, annotations, overrides, keywordEdits });
+  const current = (): Gating => ({ populations: rawPopulations, scales, spillover: editedSpill, derived, useComp, groups, keywordCols, annotations, overrides, keywordEdits, normalisation });
   const restore = (g: Gating) => {
     setScales(g.scales);
     setEditedSpill(g.spillover);
@@ -537,6 +586,7 @@ export function App() {
     setAnnotations(g.annotations);
     setOverrides(g.overrides);
     setKeywordEdits(g.keywordEdits);
+    setNormalisation(g.normalisation);
     setParent(null);
   };
   const undoAll = () => {
@@ -625,6 +675,7 @@ export function App() {
     ...(t.annotations ? { annotations: t.annotations } : {}),
     overrides: t.overrides ?? {}, // a gating template carries only the shared gates
     ...(t.keywordEdits ? { keywordEdits: t.keywordEdits } : {}),
+    ...(t.normalisation ? { normalisation: t.normalisation } : {}),
   });
 
   // Files opened together are gated with the one rule they all match, or the user is told why not.
@@ -705,7 +756,7 @@ export function App() {
       }
       return [{ label: `${s.name} · ${pid === "all" ? "All events" : pathOf(populations, pid)}`, xs, mask }];
     });
-  }, [overlayKeys, samples, populations, overrides, useComp, editedSpill, x]);
+  }, [overlayKeys, samples, populations, overrides, useComp, editedSpill, x, norm]);
 
   const exportEvents = (populationId: string, format: "csv" | "fcs") => {
     if (!sample || !cols) return;
@@ -718,6 +769,7 @@ export function App() {
     if (format === "csv") download(`${base}.csv`, eventsCsv(sample.names.map((n) => paramLabel(sample, n)), cols, events), "text/csv");
     else download(`${base}.fcs`, eventsFcs({ ...sample.file, keywords: keywordsOf(sample) }, cols, events, compensated, {
       CYTOPOP_SOURCE: sample.name, CYTOPOP_POPULATION: path, CYTOPOP_COMPENSATED: compensated ? "yes" : "no",
+      ...(norm.describe(sample) ? { CYTOPOP_NORMALISATION: norm.describe(sample) } : {}),
     }), "application/vnd.isac.fcs");
   };
   const cleanApplied = populations.some((p) => p.gate.kind === "clean");
@@ -813,6 +865,7 @@ export function App() {
         onCheckSettings={() => setCheckingSettings(true)}
         onClean={() => setCleaning(true)}
         onTrack={() => setTracking(true)}
+        onNormalise={() => setNormalising(true)}
         onExportEvents={() => setExportingEvents(true)}
         onDerive={() => setDeriving(true)}
         onGrid={() => setGridOpen(true)}
@@ -1065,7 +1118,7 @@ export function App() {
         canSave={rawPopulations.length > 0}
         onSave={(name) => setVersions((v) => [...v, {
           id: newId("v"), name, saved: new Date().toISOString(),
-          template: { populations: rawPopulations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}) },
+          template: { populations: rawPopulations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}), ...(normalisation ? { normalisation } : {}) },
         }])}
         onRestore={(id) => {
           const v = versions.find((x) => x.id === id);
@@ -1109,6 +1162,22 @@ export function App() {
           setPopulations((p) => [...p, { id: newId(), name, parentId: parent, gate: { kind: "boolean", op, of } }]);
           setCombining(false);
         }}
+      />
+      <NormaliseDialog
+        open={normalising}
+        groups={(() => {
+          const byGroup = new Map<string, string[]>();
+          for (const smp of samples) {
+            const g = groups[smp.name];
+            if (smp.name !== DEMO_NAME && g) byGroup.set(g, [...(byGroup.get(g) ?? []), smp.name]);
+          }
+          return [...byGroup].map(([name, names]) => ({ name, samples: names }));
+        })()}
+        channels={[...new Set(samples.filter((smp) => smp.name !== DEMO_NAME).flatMap((smp) => smp.file.parameters.map((q) => q.name)))]}
+        value={normalisation}
+        preview={normPreview}
+        onApply={(n) => { setNormalisation(n); setNormalising(false); }}
+        onClose={() => setNormalising(false)}
       />
       <SampleTableDialog open={!!sampleTableData} long={sampleTableData} meta={metaHeader.length} onClose={() => setSampleTableData(null)} />
       <ReportDialog report={importReport} onClose={() => setImportReport(null)} />

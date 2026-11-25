@@ -2,6 +2,7 @@ import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import RuleOutlined from "@mui/icons-material/RuleOutlined";
 import IosShareOutlined from "@mui/icons-material/IosShareOutlined";
 import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
+import AlignVerticalCenterOutlined from "@mui/icons-material/AlignVerticalCenterOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import FunctionsOutlined from "@mui/icons-material/FunctionsOutlined";
@@ -73,6 +74,7 @@ export function TopBar(props: {
   onCheckSettings: () => void;
   onClean: () => void;
   onTrack: () => void;
+  onNormalise: () => void;
   onExportEvents: () => void;
   onDerive: () => void;
   onGrid: () => void;
@@ -205,6 +207,15 @@ export function TopBar(props: {
           >
             <ListItemIcon><TimelineOutlined fontSize="small" /></ListItemIcon>
             <ListItemText>Track a statistic across runs</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              props.onNormalise();
+              setAnchor(null);
+            }}
+          >
+            <ListItemIcon><AlignVerticalCenterOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText>Normalise batches</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {

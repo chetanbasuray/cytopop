@@ -4,6 +4,7 @@ import type { FcsFile } from "../core/fcs";
 import type { Dimension, Gate } from "../core/gates";
 import type { Population } from "../core/populations";
 import { evaluateFormula, isDerivedParameter, parseFormula, type DerivedParameter } from "../core/formula";
+import { mapColumn, type ChannelMap } from "../core/normalise";
 import { arcsinh, hyperlog, linear, log, logicle, type TransformSpec } from "../core/transforms";
 
 export type Tool = "none" | "rect" | "polygon" | "ellipse" | "quad" | "hinge" | "divider" | "range";
@@ -18,6 +19,15 @@ export interface Sample {
   compensated?: Float32Array[];
   compensatedWith?: string; // JSON of the matrix behind `compensated`
   derivedCols?: { base: Float32Array[]; key: string; all: Float32Array[] };
+  norm?: { key: string; maps: Record<string, ChannelMap> }; // set each render from the workspace's normalisation
+  normalisedCols?: { base: Float32Array[]; key: string; cols: Float32Array[] };
+}
+
+/** Batches are sample groups; each batch's reference is aligned to the anchor batch's reference. */
+export interface Normalisation {
+  channels: string[];
+  anchor: string; // group name
+  references: Record<string, string>; // group name to the file name of its reference sample
 }
 
 export interface Template {
@@ -31,6 +41,7 @@ export interface Template {
   annotations?: Annotations;
   overrides?: Record<string, Record<string, Gate>>; // sample file name to population id to that sample's own gate
   keywordEdits?: Record<string, Record<string, string>>; // sample file name to FCS keyword to the value that replaces or adds to the file's
+  normalisation?: Normalisation; // reference samples per group, aligned by quantile mapping
 }
 
 /** Gating applied by itself when every newly opened file's name matches `pattern`. */
@@ -66,6 +77,9 @@ function isAnnotations(a: unknown): a is Annotations {
     !!(a as Annotations).values && typeof (a as Annotations).values === "object" && Object.values((a as Annotations).values).every(isStrings);
 }
 
+const isNormalisation = (n: unknown): boolean =>
+  isObject(n) && Array.isArray(n.channels) && n.channels.every((c) => typeof c === "string") && typeof n.anchor === "string" && isStrings(n.references);
+
 export function isTemplate(t: unknown): t is Template {
   return !!t && typeof t === "object" && Array.isArray((t as Template).populations) && typeof (t as Template).scales === "object" &&
     ((t as Template).spillover === undefined || isSpillover((t as Template).spillover)) &&
@@ -75,6 +89,7 @@ export function isTemplate(t: unknown): t is Template {
     ((t as Template).keywordColumns === undefined || (Array.isArray((t as Template).keywordColumns) && (t as Template).keywordColumns!.every((k) => typeof k === "string"))) &&
     ((t as Template).annotations === undefined || isAnnotations((t as Template).annotations)) &&
     ((t as Template).overrides === undefined || isOverrides((t as Template).overrides)) &&
+    ((t as Template).normalisation === undefined || isNormalisation((t as Template).normalisation)) &&
     ((t as Template).keywordEdits === undefined || (isObject((t as Template).keywordEdits) && Object.values((t as Template).keywordEdits!).every(isStrings)));
 }
 
@@ -85,7 +100,7 @@ export function withDerived(s: Sample, derived: DerivedParameter[]): Sample {
   return s;
 }
 
-function baseColumns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {
+export function baseColumns(s: Sample, useCompensation: boolean, edited?: Spillover): Float32Array[] {
   const names = s.file.parameters.map((p) => p.name);
   const spill = spilloverFor(names, s.file.spillover, edited);
   if (!useCompensation || !spill) return s.file.data;
@@ -97,9 +112,20 @@ function baseColumns(s: Sample, useCompensation: boolean, edited?: Spillover): F
   return s.compensated;
 }
 
-/** File (optionally compensated) columns, then one column per derived name in `s.names`. */
+/** The columns with each mapped channel warped onto the anchor batch; cached until the inputs change. */
+function normalised(s: Sample, base: Float32Array[]): Float32Array[] {
+  if (!s.norm || !Object.keys(s.norm.maps).length) return base;
+  if (s.normalisedCols?.base !== base || s.normalisedCols.key !== s.norm.key) {
+    const names = s.file.parameters.map((p) => p.name);
+    const maps = s.norm.maps;
+    s.normalisedCols = { base, key: s.norm.key, cols: base.map((c, i) => (maps[names[i]!] ? mapColumn(c, maps[names[i]!]!) : c)) };
+  }
+  return s.normalisedCols.cols;
+}
+
+/** File (optionally compensated and normalised) columns, then one column per derived name in `s.names`. */
 export function columns(s: Sample, useCompensation: boolean, edited?: Spillover, derived: DerivedParameter[] = []): Float32Array[] {
-  const base = baseColumns(s, useCompensation, edited);
+  const base = normalised(s, baseColumns(s, useCompensation, edited));
   const used = derived.filter((d) => s.names.includes(d.name));
   if (!used.length) return base;
   const key = JSON.stringify(used);
