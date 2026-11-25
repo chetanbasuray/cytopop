@@ -34,3 +34,10 @@ test("compensated exports drop the spillover matrix, and empty exports are valid
 test("eventsCsv writes a header and one row per event", () => {
   expect(eventsCsv(["a", "b,c"], [Float32Array.from([1, 2]), Float32Array.from([3.5, 4])], Uint32Array.from([1]))).toBe('a,"b,c"\n2,4\n');
 });
+
+test("exported FCS files carry edited keywords", async () => {
+  const { parseFcs } = await import("../src/core/fcs");
+  const data = [new Float32Array([1, 2])];
+  const file = { keywords: { $FIL: "a.fcs", CONDITION: "Stim" }, parameters: [{ name: "X", range: 1024, bits: 32, gain: 1, decades: 0, offset: 0 }], eventCount: 2, data } as unknown as Parameters<typeof eventsFcs>[0];
+  expect(parseFcs(eventsFcs(file, data, pickedEvents(2), false, {})).keywords.CONDITION).toBe("Stim");
+});

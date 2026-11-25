@@ -27,3 +27,9 @@ test("workspaces may carry per-sample gate adjustments", () => {
   expect(isTemplate({ populations: [], scales: {}, overrides: { "a.fcs": { p1: "wide" } } })).toBe(false);
   expect(isTemplate({ populations: [], scales: {}, overrides: { "a.fcs": [] } })).toBe(false);
 });
+
+test("workspaces may carry keyword edits as file name to keyword to value", () => {
+  expect(isTemplate({ populations: [], scales: {}, keywordEdits: { "a.fcs": { CONDITION: "Stim" } } })).toBe(true);
+  expect(isTemplate({ populations: [], scales: {}, keywordEdits: { "a.fcs": { CONDITION: 1 } } })).toBe(false);
+  expect(isTemplate({ populations: [], scales: {}, keywordEdits: [] })).toBe(false);
+});

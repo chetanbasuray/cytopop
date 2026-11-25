@@ -108,6 +108,7 @@ interface Gating {
   keywordCols: string[];
   annotations: Annotations;
   overrides: Record<string, Record<string, Gate>>;
+  keywordEdits: Record<string, Record<string, string>>;
 }
 
 export function App() {
@@ -140,6 +141,7 @@ export function App() {
   const [keywordCols, setKeywordCols] = useState<string[]>(stored?.keywordColumns ?? []);
   const [annotations, setAnnotations] = useState<Annotations>(stored?.annotations ?? { columns: [], values: {} });
   const [editingMeta, setEditingMeta] = useState(false);
+  const [keywordEdits, setKeywordEdits] = useState<Record<string, Record<string, string>>>(stored?.keywordEdits ?? {});
   const [overrides, setOverrides] = useState<Record<string, Record<string, Gate>>>(stored?.overrides ?? {});
   const [adjustOne, setAdjustOne] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
@@ -166,9 +168,11 @@ export function App() {
   const groupNames = new Set(Object.values(groups));
   const filter = groupNames.has(groupFilter) ? groupFilter : "all";
   const shownSamples = filter === "all" ? samples : samples.filter((s) => groups[s.name] === filter);
+  // The file's own keywords with the user's edits on top; the opened file itself is never changed.
+  const keywordsOf = (s: Sample) => ({ ...s.file.keywords, ...keywordEdits[s.name] });
   const groupCol = (s: Sample) => [
     ...(groupNames.size ? [groups[s.name] ?? ""] : []),
-    ...keywordCols.map((k) => s.file.keywords[k] ?? ""),
+    ...keywordCols.map((k) => keywordsOf(s)[k] ?? ""),
     ...annotations.columns.map((c) => annotations.values[s.name]?.[c] ?? ""),
   ];
   const metaHeader = [...(groupNames.size ? ["Group"] : []), ...keywordCols, ...annotations.columns];
@@ -241,11 +245,11 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) } satisfies Template));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}) } satisfies Template));
     } catch {
       /* per-viewer convenience only */
     }
-  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations, overrides]);
+  }, [populations, scales, editedSpill, derived, groups, keywordCols, annotations, overrides, keywordEdits]);
 
   useEffect(() => {
     try {
@@ -490,7 +494,7 @@ export function App() {
   // ---------- templates and export ----------
   const saveTemplate = () =>
     download("cytopop-workspace.json", JSON.stringify({
-      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), samples: samples.map((s) => s.name),
+      populations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(groups).length ? { groups } : {}), ...(keywordCols.length ? { keywordColumns: keywordCols } : {}), ...(annotations.columns.length ? { annotations } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}), samples: samples.map((s) => s.name),
     } satisfies Template, null, 2), "application/json");
 
   const saveWsp = () => {
@@ -507,7 +511,7 @@ export function App() {
         }
         return [{
           name: s.name,
-          file: s.file,
+          file: { ...s.file, keywords: keywordsOf(s) },
           spillover: spilloverFor(s.file.parameters.map((q) => q.name), s.file.spillover, editedSpill),
           counts: new Map([...masks].map(([id, m]) => [id, eventsIn(m)])),
         }];
@@ -522,7 +526,7 @@ export function App() {
     }
   };
 
-  const current = (): Gating => ({ populations: rawPopulations, scales, spillover: editedSpill, derived, useComp, groups, keywordCols, annotations, overrides });
+  const current = (): Gating => ({ populations: rawPopulations, scales, spillover: editedSpill, derived, useComp, groups, keywordCols, annotations, overrides, keywordEdits });
   const restore = (g: Gating) => {
     setScales(g.scales);
     setEditedSpill(g.spillover);
@@ -532,6 +536,7 @@ export function App() {
     setKeywordCols(g.keywordCols);
     setAnnotations(g.annotations);
     setOverrides(g.overrides);
+    setKeywordEdits(g.keywordEdits);
     setParent(null);
   };
   const undoAll = () => {
@@ -619,6 +624,7 @@ export function App() {
     ...(t.keywordColumns ? { keywordCols: t.keywordColumns } : {}),
     ...(t.annotations ? { annotations: t.annotations } : {}),
     overrides: t.overrides ?? {}, // a gating template carries only the shared gates
+    ...(t.keywordEdits ? { keywordEdits: t.keywordEdits } : {}),
   });
 
   // Files opened together are gated with the one rule they all match, or the user is told why not.
@@ -655,7 +661,7 @@ export function App() {
   const cleaningRows = cleaning ? samples.map((s) => ({ name: s.name, report: cleaned(s.names, columns(s, useComp, editedSpill, derived), s.file.parameters.map((q) => q.range)).report })) : [];
   // Runs in acquisition order; files without $DATE keep their open order after the dated ones.
   const runs = tracking
-    ? samples.map((s) => ({ s, date: runDate(s.file.keywords) }))
+    ? samples.map((s) => ({ s, date: runDate(keywordsOf(s)) }))
         .sort((a, b) => (a.date && b.date ? +a.date - +b.date : a.date ? -1 : b.date ? 1 : 0))
     : [];
   const trackValues = (populationId: string, channel: string, stat: ChannelStatKey) =>
@@ -710,7 +716,7 @@ export function App() {
     const base = `${sample.name.replace(/\.fcs$/i, "")}-${path.replace(/[^\w-]+/g, "_")}`;
     const compensated = useComp && !!spilloverFor(sample.names, sample.file.spillover, editedSpill);
     if (format === "csv") download(`${base}.csv`, eventsCsv(sample.names.map((n) => paramLabel(sample, n)), cols, events), "text/csv");
-    else download(`${base}.fcs`, eventsFcs(sample.file, cols, events, compensated, {
+    else download(`${base}.fcs`, eventsFcs({ ...sample.file, keywords: keywordsOf(sample) }, cols, events, compensated, {
       CYTOPOP_SOURCE: sample.name, CYTOPOP_POPULATION: path, CYTOPOP_COMPENSATED: compensated ? "yes" : "no",
     }), "application/vnd.isac.fcs");
   };
@@ -748,7 +754,7 @@ export function App() {
       const cols = statChannels.map((ch) => data[s.names.indexOf(ch)]);
       const negMask = masks.get(negative);
       const neg = negMask ? cols.map((col) => (col ? channelStats(col, negMask) : EMPTY_STATS)) : undefined;
-      const volumeUl = volumeMicrolitres(s.file.keywords);
+      const volumeUl = volumeMicrolitres(keywordsOf(s));
       const values = (count: number, percentGrandparent: number, mask?: Uint8Array) =>
         statValues(statKeys, { cols, mask, count, percentGrandparent, volumeUl, negative: neg });
       rows.push([s.name, ...groupCol(s), "All events", s.file.eventCount, 100, 100, ...values(s.file.eventCount, NaN)]);
@@ -835,12 +841,13 @@ export function App() {
       />
       {editingMeta && (
         <MetadataDialog
-          samples={samples.filter((s) => s.name !== DEMO_NAME).map((s) => ({ name: s.name, keywords: s.file.keywords }))}
+          samples={samples.filter((s) => s.name !== DEMO_NAME).map((s) => ({ name: s.name, keywords: s.file.keywords, edits: keywordEdits[s.name] ?? {} }))}
           keywordColumns={keywordCols}
           annotations={annotations}
-          onApply={(k, a) => {
+          onApply={(k, a, e) => {
             setKeywordCols(k);
             setAnnotations(a);
+            setKeywordEdits(e);
             setEditingMeta(false);
           }}
           onClose={() => setEditingMeta(false)}
@@ -945,7 +952,7 @@ export function App() {
             onStatKeys={setStatKeys}
             negative={negative}
             onNegative={setNegative}
-            volumeUl={sample && volumeMicrolitres(sample.file.keywords)}
+            volumeUl={sample && volumeMicrolitres(keywordsOf(sample))}
           />
         </Box>
       </Box>
@@ -1058,7 +1065,7 @@ export function App() {
         canSave={rawPopulations.length > 0}
         onSave={(name) => setVersions((v) => [...v, {
           id: newId("v"), name, saved: new Date().toISOString(),
-          template: { populations: rawPopulations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) },
+          template: { populations: rawPopulations, scales, ...(editedSpill ? { spillover: editedSpill } : {}), ...(derived.length ? { derived } : {}), ...(Object.keys(overrides).length ? { overrides } : {}), ...(Object.keys(keywordEdits).length ? { keywordEdits } : {}) },
         }])}
         onRestore={(id) => {
           const v = versions.find((x) => x.id === id);
